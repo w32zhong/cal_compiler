@@ -40,7 +40,7 @@ char *tmp_name();
 %start program
 
 %%
-program : { code_print(); printf("DEBUG: \n"); var_print(); }
+program : { /* code_print(); var_print(); */ }
         | stmt program ;
 
 stmt : expr '\n' {  }
@@ -256,12 +256,82 @@ void code_print()
 	list_foreach(&code_list, &print_code, NULL);
 }
 
+static
+LIST_IT_CALLBK(print_c_def)
+{
+	LIST_OBJ(var_t, p, ln);
+	P_CAST(cf, FILE, pa_extra);
+	char *str = p->name;
+
+	if (is_number(str[0]))
+		LIST_GO_OVER;
+	else if (is_number(str[strlen(str) - 1]))
+		fprintf(cf, "\tint %s;\n", p->name);
+	else
+		fprintf(cf, "\tint %s = 0;\n", p->name);
+
+	LIST_GO_OVER;
+}
+
+static
+LIST_IT_CALLBK(print_c_code)
+{
+	LIST_OBJ(struct code_t, p, ln);
+	P_CAST(cf, FILE, pa_extra);
+
+	if (p->op == '+' || (p->op == '-' && p->opr1 != NULL) ||
+	    p->op == '*' || p->op == '/')
+		fprintf(cf, "\t%s = %s %c %s;\n", p->opr0->name, 
+			p->opr1->name, p->op, p->opr2->name);
+	else if (p->op == '-')
+		fprintf(cf, "\t%s = %c %s;\n", p->opr0->name, 
+			p->op, p->opr2->name);
+	else if (p->op == '=')
+		fprintf(cf, "\t%s %c %s;\n", p->opr0->name, 
+			p->op, p->opr2->name);
+
+	LIST_GO_OVER;
+}
+
+static
+LIST_IT_CALLBK(print_c_print)
+{
+	LIST_OBJ(var_t, p, ln);
+	P_CAST(cf, FILE, pa_extra);
+	char *str = p->name;
+
+	if (is_number(str[0]))
+		LIST_GO_OVER;
+	else if (is_number(str[strlen(str) - 1]))
+		LIST_GO_OVER;
+	else
+		fprintf(cf, "\tprintf(\"%s = %%d\\n\", %s);\n", 
+				p->name, p->name);
+
+	LIST_GO_OVER;
+}
+
 int main() 
 {
+	FILE *cf = fopen("output.c", "w");
 	yyparse();
+
+	if (cf) {
+		printf("generate C file...\n");
+	} else {
+		printf("cannot open file for writing.\n");
+		return 0;
+	}
+
+	fprintf(cf, "#include <stdio.h> \n");
+	fprintf(cf, "int main() \n{ \n");
+	list_foreach(&var_list, &print_c_def, cf);
+	list_foreach(&code_list, &print_c_code, cf);
+	list_foreach(&var_list, &print_c_print, cf);
+	fprintf(cf, "\treturn 0; \n} \n");
+	fclose(cf);
 
 	list_foreach(&var_list, &release_var, NULL);
 	list_foreach(&code_list, &release_code, NULL);
-	printf("Bye!\n");
 	return 0;
 }
