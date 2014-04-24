@@ -40,37 +40,81 @@ char *tmp_name();
 
 %%
 program : 
-        | stmt program;
+        | stmt program { code_print(); };
 
-stmt : expr '\n' { code_print(); }
-     | '\n' { return; };
+stmt : expr '\n' {  }
+     | '\n' { };
 
 expr   : expr '+' factor 
        { 
          var_t *v = var_map(tmp_name());
          $$ = v;
-       
          code_gen(v , $1, '+', $3);
        }
-       | factor
-       {
+       | expr '-' factor 
+       { 
+         var_t *v = var_map(tmp_name());
+         $$ = v;
+         code_gen(v , $1, '-', $3);
+       }
+       | assign 
+       { 
          $$ = $1;
        }
-       ;
+       | factor 
+       { 
+         $$ = $1;
+       };
 
-factor : VAR 
+factor : factor '*' term 
        { 
-         var_t *v = var_map($1); 
+         var_t *v = var_map(tmp_name());
          $$ = v;
-         free($1);
+         code_gen(v , $1, '*', $3);
        }
-       | NUM
+       | factor '/' term 
        { 
-         var_t *v = var_map($1); 
+         var_t *v = var_map(tmp_name());
          $$ = v;
-         free($1);
+         code_gen(v , $1, '/', $3);
        }
-       ;
+       | term
+       { 
+         $$ = $1;
+       };
+
+term   : NUM 
+       { 
+       }
+       | '-' factor 
+       { 
+         $$.u.d = - $2.u.d; 
+       
+         $$._3addr_name = strdup(tmp_name());
+         printf("%s = - %s\n", $$._3addr_name, $2._3addr_name);
+       }
+       | VAR
+       { char err_str[32]; 
+         struct var_t *p = var_map($1.u.s);
+         $$.u.d = p->val; 
+         free($1.u.s);
+       }
+       | '(' expr ')' 
+       { 
+         $$.u.d = $2.u.d; 
+         $$._3addr_name = $2._3addr_name;
+       };
+
+assign : VAR '=' expr  
+       { $$.u.d = $3.u.d; 
+         struct var_t *p = var_map($1.u.s);
+         p->val = $3.u.d;
+         free($1.u.s);
+
+         $$._3addr_name = strdup($1._3addr_name);
+         printf("%s = %s\n", $$._3addr_name, $3._3addr_name);
+       };
+%term assign
 %%
 
 int line_num = 1;
@@ -207,81 +251,5 @@ int main()
 	return 0;
 }
 /*
-       }
-       | expr '-' factor 
-       { 
-         $$.u.d = $1.u.d - $3.u.d; 
-       
-         $$._3addr_name = strdup(tmp_name());
-         printf("%s = %s - %s\n", $$._3addr_name, 
-                $1._3addr_name, $3._3addr_name);
-       }
-       | assign 
-       { 
-         $$.u.d = $1.u.d; 
-         $$._3addr_name = $1._3addr_name;
-       }
-       | factor 
-       { 
-         $$.u.d = $1.u.d; 
-         $$._3addr_name = $1._3addr_name;
-       };
-
-factor : factor '*' term 
-       { 
-         $$.u.d = $1.u.d * $3.u.d; 
-       
-         $$._3addr_name = strdup(tmp_name());
-         printf("%s = %s * %s\n", $$._3addr_name, 
-                $1._3addr_name, $3._3addr_name);
-       }
-       | factor '/' term 
-       { 
-         $$.u.d = $1.u.d / $3.u.d; 
-       
-         $$._3addr_name = strdup(tmp_name());
-         printf("%s = %s / %s\n", $$._3addr_name, 
-                $1._3addr_name, $3._3addr_name);
-       }
-       | term
-       { 
-         $$.u.d = $1.u.d; 
-         $$._3addr_name = $1._3addr_name;
-       };
-
-term   : NUM 
-       { 
-         $$.u.d = $1.u.d; 
-         $$._3addr_name = $1._3addr_name;
-       }
-       | '-' factor 
-       { 
-         $$.u.d = - $2.u.d; 
-       
-         $$._3addr_name = strdup(tmp_name());
-         printf("%s = - %s\n", $$._3addr_name, $2._3addr_name);
-       }
-       | VAR
-       { char err_str[32]; 
-         struct var_t *p = var_map($1.u.s);
-         $$.u.d = p->val; 
-         free($1.u.s);
-       }
-       | '(' expr ')' 
-       { 
-         $$.u.d = $2.u.d; 
-         $$._3addr_name = $2._3addr_name;
-       };
-
-assign : VAR '=' expr  
-       { $$.u.d = $3.u.d; 
-         struct var_t *p = var_map($1.u.s);
-         p->val = $3.u.d;
-         free($1.u.s);
-
-         $$._3addr_name = strdup($1._3addr_name);
-         printf("%s = %s\n", $$._3addr_name, $3._3addr_name);
-       };
-%term assign
 */
 
