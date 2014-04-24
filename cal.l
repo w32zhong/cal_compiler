@@ -12,17 +12,15 @@ extern int line_num; /* line number from cal.tab.c */
 \n              { line_num++; return '\n'; }
 "+"|"-"|"*"|"/" { return yytext[0]; }
 "("|")"|"="     { return yytext[0]; }
-[0-9]+\.?[0-9]* { yylval.a.u.d = atoi(yytext); 
-                  yylval.a._3addr_name = strdup(yytext); 
+[0-9]+\.?[0-9]* { yylval.tok = strdup(yytext); 
                   return NUM; }
-[a-zA-Z_]+      { char *p, *tmp_str = strdup(yytext);
-                  p = tmp_str;
+[a-zA-Z_]+      { char *pp, *p = strdup(yytext);
+                  pp = p;
                   while (*p != '\0') {
                   	*p = toupper(*p);
                   	p++;
                   }
-                  yylval.a.u.s = tmp_str; 
-                  yylval.a._3addr_name = strdup(tmp_str); 
+                  yylval.tok = pp; 
                   return VAR; }
 .               { printf("lexer error at line %d: " 
                   "illegal token `%s'\n", line_num, yytext);

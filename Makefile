@@ -1,7 +1,7 @@
 all: cal 
 
 %: %.tab.o %.yy.o
-	gcc $^ -lfl -o $@ 
+	gcc $^ -lfl -lmcheck -o $@ 
 
 %.tab.o: %.tab.c
 	gcc -c -o $@ $^
