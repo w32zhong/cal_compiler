@@ -21,6 +21,7 @@ struct code_t *code_gen(var_t*, var_t*, char, var_t*);
 var_t *var_map(char *);
 void yyerror(const char *);
 void code_print();
+void var_print();
 char *tmp_name();
 %}
 
@@ -39,8 +40,8 @@ char *tmp_name();
 %start program
 
 %%
-program : 
-        | stmt program { code_print(); };
+program : { code_print(); printf("DEBUG: \n"); var_print(); }
+        | stmt program ;
 
 stmt : expr '\n' {  }
      | '\n' { };
@@ -141,7 +142,7 @@ static
 LIST_IT_CALLBK(print_var)
 {
 	LIST_OBJ(var_t, p, ln);
-	printf("%s\n", p->name);
+	printf("%s", p->name);
 	
 	if (pa_now->now == pa_head->last)
 		printf(".\n");
@@ -238,6 +239,11 @@ struct code_t *code_gen(var_t* opr0,
 
 	list_insert_one_at_tail(&code->ln, &code_list, NULL, NULL);
 	return code;
+}
+
+void var_print()
+{
+	list_foreach(&var_list, &print_var, NULL);
 }
 
 void code_print()
