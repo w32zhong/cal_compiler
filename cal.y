@@ -211,6 +211,11 @@ LIST_IT_CALLBK(release_code)
 	return res;
 }
 
+char is_number(char c)
+{
+	return (48 <= c && c <= 57);
+}
+
 var_t *var_map(char *name)
 {
 	struct pa_id_var pa = {name, NULL};
