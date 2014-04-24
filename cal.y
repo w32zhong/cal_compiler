@@ -15,6 +15,7 @@ struct code_t {
 	struct list_node ln;
 	var_t  *opr0, *opr1, *opr2;
 	char    op;
+	int     line_num;
 };
 
 struct code_t *code_gen(var_t*, var_t*, char, var_t*);
@@ -40,7 +41,7 @@ char *tmp_name();
 %start program
 
 %%
-program : { /* code_print(); var_print(); */ }
+program : { printf("three-address code:\n"); code_print(); /* var_print(); */ }
         | stmt program ;
 
 stmt : expr '\n' {  }
@@ -236,11 +237,13 @@ struct code_t *code_gen(var_t* opr0,
 		var_t* opr1, char op, var_t* opr2)
 {
 	struct code_t *code = malloc(sizeof(struct code_t));
+	static int line_num = 0;
 	LIST_NODE_CONS(code->ln);
 	code->opr0 = opr0;
 	code->op = op;
 	code->opr1 = opr1;
 	code->opr2 = opr2;
+	code->line_num = line_num ++;
 
 	list_insert_one_at_tail(&code->ln, &code_list, NULL, NULL);
 	return code;
@@ -281,15 +284,15 @@ LIST_IT_CALLBK(print_c_code)
 
 	if (p->op == '+' || (p->op == '-' && p->opr1 != NULL) ||
 	    p->op == '*' || p->op == '/')
-		fprintf(cf, "\t%s = %s %c %s;\n", p->opr0->name, 
-			p->opr1->name, p->op, p->opr2->name);
+		fprintf(cf, "S%d:\t%s = %s %c %s;\n", p->line_num, 
+			p->opr0->name, p->opr1->name, p->op, p->opr2->name);
 	else if (p->op == '-')
-		fprintf(cf, "\t%s = %c %s;\n", p->opr0->name, 
-			p->op, p->opr2->name);
+		fprintf(cf, "S%d:\t%s = %c %s;\n", p->line_num, 
+			p->opr0->name, p->op, p->opr2->name);
 	else if (p->op == '=')
-		fprintf(cf, "\t%s %c %s;\n", p->opr0->name, 
-			p->op, p->opr2->name);
-
+		fprintf(cf, "S%d:\t%s %c %s;\n", p->line_num,
+			p->opr0->name, p->op, p->opr2->name);
+	
 	LIST_GO_OVER;
 }
 
