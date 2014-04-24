@@ -31,7 +31,7 @@ char *tmp_name();
 
 %error-verbose
 %token <tok> VAR NUM
-%type  <v> expr factor 
+%type  <v> expr factor term assign
 %right '=' 
 %left '+' '-' 
 %left '*' '/' 
@@ -85,36 +85,33 @@ factor : factor '*' term
 
 term   : NUM 
        { 
+         var_t *v = var_map($1); 
+         $$ = v;
+         free($1);
        }
        | '-' factor 
        { 
-         $$.u.d = - $2.u.d; 
-       
-         $$._3addr_name = strdup(tmp_name());
-         printf("%s = - %s\n", $$._3addr_name, $2._3addr_name);
+         var_t *v = var_map(tmp_name());
+         $$ = v;
+         code_gen(v , NULL, '-', $2);
        }
        | VAR
-       { char err_str[32]; 
-         struct var_t *p = var_map($1.u.s);
-         $$.u.d = p->val; 
-         free($1.u.s);
+       { 
+         var_t *v = var_map($1); 
+         $$ = v;
+         free($1);
        }
        | '(' expr ')' 
        { 
-         $$.u.d = $2.u.d; 
-         $$._3addr_name = $2._3addr_name;
+         $$ = $2;
        };
 
 assign : VAR '=' expr  
-       { $$.u.d = $3.u.d; 
-         struct var_t *p = var_map($1.u.s);
-         p->val = $3.u.d;
-         free($1.u.s);
-
-         $$._3addr_name = strdup($1._3addr_name);
-         printf("%s = %s\n", $$._3addr_name, $3._3addr_name);
+       {  
+         var_t *v = var_map($1);
+         $$ = v;
+         code_gen(v , NULL, '=', $3);
        };
-%term assign
 %%
 
 int line_num = 1;
@@ -172,9 +169,16 @@ static
 LIST_IT_CALLBK(print_code)
 {
 	LIST_OBJ(struct code_t, p, ln);
-	if (p->op == '+')
+	if (p->op == '+' || (p->op == '-' && p->opr1 != NULL) ||
+	    p->op == '*' || p->op == '/')
 		printf("%s = %s %c %s\n", p->opr0->name, 
 			p->opr1->name, p->op, p->opr2->name);
+	else if (p->op == '-')
+		printf("%s = %c %s\n", p->opr0->name, 
+			p->op, p->opr2->name);
+	else if (p->op == '=')
+		printf("%s %c %s\n", p->opr0->name, 
+			p->op, p->opr2->name);
 
 	LIST_GO_OVER;
 }
@@ -189,7 +193,7 @@ LIST_IT_CALLBK(release_var)
 
 	free(p->name);
 	free(p);
-	
+
 	return res;
 }
 
@@ -250,6 +254,3 @@ int main()
 	printf("Bye!\n");
 	return 0;
 }
-/*
-*/
-
