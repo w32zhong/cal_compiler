@@ -173,16 +173,17 @@ LIST_IT_CALLBK(print_code)
 	LIST_OBJ(struct code_t, p, ln);
 	if (p->op == '+' || (p->op == '-' && p->opr1 != NULL) ||
 	    p->op == '*' || p->op == '/')
-		printf("%s = %s %c %s\n", p->opr0->name, 
-			p->opr1->name, p->op, p->opr2->name);
+		printf("S%d:  %s = %s %c %s;\n", p->line_num, 
+			p->opr0->name, p->opr1->name, p->op, p->opr2->name);
 	else if (p->op == '-')
-		printf("%s = %c %s\n", p->opr0->name, 
-			p->op, p->opr2->name);
+		printf("S%d:  %s = %c %s;\n", p->line_num, 
+			p->opr0->name, p->op, p->opr2->name);
 	else if (p->op == '=')
-		printf("%s %c %s\n", p->opr0->name, 
-			p->op, p->opr2->name);
+		printf("S%d:  %s %c %s;\n", p->line_num,
+			p->opr0->name, p->op, p->opr2->name);
 
 	LIST_GO_OVER;
+	
 }
 
 static
@@ -314,6 +315,87 @@ LIST_IT_CALLBK(print_c_print)
 	LIST_GO_OVER;
 }
 
+char printed_flag;
+
+static
+LIST_IT_CALLBK(print_flow_dep)
+{
+	LIST_OBJ(struct code_t, p, ln);
+	P_CAST(q, struct code_t, pa_extra);
+	
+	if (p == q) {
+		return LIST_RET_BREAK;
+	} else if (p->opr0 == q->opr1 || p->opr0 == q->opr2) {
+		printf("S%d ", p->line_num);
+		printed_flag = 0;
+	}
+ 
+	LIST_GO_OVER;
+}
+
+static
+LIST_IT_CALLBK(print_anti_dep)
+{
+	LIST_OBJ(struct code_t, p, ln);
+	P_CAST(q, struct code_t, pa_extra);
+	
+	if (p == q) {
+		return LIST_RET_BREAK;
+	} else if (p->opr1 == q->opr0 || p->opr2 == q->opr0) {
+		printf("S%d ", p->line_num);
+		printed_flag = 0;
+	}
+ 
+	LIST_GO_OVER;
+}
+
+static
+LIST_IT_CALLBK(print_write_dep)
+{
+	LIST_OBJ(struct code_t, p, ln);
+	P_CAST(q, struct code_t, pa_extra);
+	
+	if (p == q) {
+		return LIST_RET_BREAK;
+	} else if (p->opr0 == q->opr0 || p->opr0 == q->opr0) {
+		printf("S%d ", p->line_num);
+		printed_flag = 0;
+	}
+ 
+	LIST_GO_OVER;
+}
+
+static
+LIST_IT_CALLBK(print_dep)
+{
+	LIST_OBJ(struct code_t, p, ln);
+	
+	printf("S%d:\n", p->line_num);
+
+	printf("flow dependency: ");
+	printed_flag = 1;
+	list_foreach(&code_list, &print_flow_dep, p);
+	if (printed_flag)
+		printf("None");
+	printf("\n");
+
+	printf("anti-dependency: ");
+	printed_flag = 1;
+	list_foreach(&code_list, &print_anti_dep, p);
+	if (printed_flag)
+		printf("None");
+	printf("\n");
+
+	printf("write-dependency: ");
+	printed_flag = 1;
+	list_foreach(&code_list, &print_write_dep, p);
+	if (printed_flag)
+		printf("None");
+	printf("\n");
+
+	LIST_GO_OVER;
+}
+
 int main() 
 {
 	FILE *cf = fopen("output.c", "w");
@@ -333,6 +415,9 @@ int main()
 	list_foreach(&var_list, &print_c_print, cf);
 	fprintf(cf, "\treturn 0; \n} \n");
 	fclose(cf);
+
+	printf("dependency: \n");
+	list_foreach(&code_list, &print_dep, NULL);
 
 	list_foreach(&var_list, &release_var, NULL);
 	list_foreach(&code_list, &release_code, NULL);
