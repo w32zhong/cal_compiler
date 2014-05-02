@@ -19,11 +19,11 @@ struct code_t {
 };
 
 struct code_t *code_gen(var_t*, var_t*, char, var_t*);
-var_t *var_map(char *);
-void yyerror(const char *);
-void code_print();
-void var_print();
-char *tmp_name();
+var_t         *var_map(char *);
+void           yyerror(const char *);
+void           code_print();
+void           var_print();
+char          *tmp_name();
 %}
 
 %union {
@@ -120,11 +120,11 @@ int line_num = 1;
 struct list_it var_list = {NULL, NULL};
 struct list_it code_list = {NULL, NULL};
 
-int tmp_cnt = 0;
-static char tmp_nm[64];
-
 char *tmp_name()
 {
+	static int tmp_cnt = 0;
+	static char tmp_nm[64];
+
 	sprintf(tmp_nm, "temp%d", tmp_cnt++);
 	return tmp_nm;
 }
@@ -173,13 +173,13 @@ LIST_IT_CALLBK(print_code)
 	LIST_OBJ(struct code_t, p, ln);
 	if (p->op == '+' || (p->op == '-' && p->opr1 != NULL) ||
 	    p->op == '*' || p->op == '/')
-		printf("S%d:  %s = %s %c %s;\n", p->line_num, 
+		printf(" %s = %s %c %s;\n", 
 			p->opr0->name, p->opr1->name, p->op, p->opr2->name);
 	else if (p->op == '-')
-		printf("S%d:  %s = %c %s;\n", p->line_num, 
+		printf(" %s = %c %s;\n", 
 			p->opr0->name, p->op, p->opr2->name);
 	else if (p->op == '=')
-		printf("S%d:  %s %c %s;\n", p->line_num,
+		printf(" %s %c %s;\n", 
 			p->opr0->name, p->op, p->opr2->name);
 
 	LIST_GO_OVER;

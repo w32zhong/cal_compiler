@@ -17,4 +17,4 @@ parse = bison --verbose --report=solved -d $^
 	$(parse) 2>&1 | grep --color conflicts || $(parse) 
 
 clean:
-	find . -mindepth 1 \( -path './.git' -o -name "*.[yl]" -o -name "list*" -o -name "README.md" -o -name "Makefile" -o -name "*.swp" \) -prune -o -print | xargs rm -f
+	find . -mindepth 1 \( -path './.git' -o -name "*.[yl]" -o -name "list*" -o -name "README.md" -o -name "test_input" -o -name "Makefile" -o -name "*.swp" \) -prune -o -print | xargs rm -f

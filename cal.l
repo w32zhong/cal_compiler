@@ -12,9 +12,10 @@ extern int line_num; /* line number from cal.tab.c */
 \n              { line_num++; return '\n'; }
 "+"|"-"|"*"|"/" { return yytext[0]; }
 "("|")"|"="     { return yytext[0]; }
-[0-9]+\.?[0-9]* { yylval.tok = strdup(yytext); 
+[0-9]+          { yylval.tok = strdup(yytext); 
                   return NUM; }
-[a-zA-Z_]+      { char *pp, *p = strdup(yytext);
+[a-zA-Z_]+      { 
+                  char *pp, *p = strdup(yytext);
                   pp = p;
                   while (*p != '\0') {
                   	*p = toupper(*p);
