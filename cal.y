@@ -422,6 +422,21 @@ LIST_IT_CALLBK(live_calc)
 		return LIST_RET_CONTINUE;
 }
 
+int heuristic_cse(struct code_t *s1, struct code_t *s2)
+{
+	struct code_t copy_s2 = *s2;
+
+	if (s1->opr1 != s2->opr1 || s1->opr2 != s2->opr2 ||
+		s1->op != s2->op) 
+		return 0;
+
+	printf("these two code may be optimized:\n");
+	_print_code(stdout, s1);
+	_print_code(stdout, s2);
+
+
+}
+
 struct elim_arg {
 	struct list_node *end_node;
 	struct code_t    *s1;
@@ -442,36 +457,45 @@ LIST_IT_CALLBK(eli_s2)
 		return LIST_RET_CONTINUE;
 }
 
+int heuristic_live(struct list_it *sub_list, struct list_it *pa_head)
+{
+	struct list_it *pa_now = sub_list;
+	struct live_arg la = {0, 0, 0, NULL, pa_head->last};
+	int res = 0;
+	LIST_OBJ(struct code_t, p, ln);
+
+	la.var = p->opr0;
+	list_foreach(sub_list, &live_calc, &la);
+	/* 
+	printf("%s liveness: %d to %d (%d).\n", la.var->name,
+			la.start, la.end, la.life);
+	*/
+	res += 2 * la.life;
+
+	la.var = p->opr1;
+	if (la.var != NULL && !is_number(la.var->name[0])) {
+		list_foreach(sub_list, &live_calc, &la);
+		res += la.life;
+	}
+
+	la.var = p->opr2;
+	if (la.var != NULL && !is_number(la.var->name[0])) {
+		list_foreach(sub_list, &live_calc, &la);
+		res += la.life;
+	}
+
+	return res;
+}
+
 static
 LIST_IT_CALLBK(eli_s1)
 {
 	LIST_OBJ(struct code_t, p, ln);
 	struct list_it sub_list = list_get_it(pa_now->now);
 	struct elim_arg ea = {pa_head->last, p}; 
-	/*
-	struct live_arg la = {0, 0, 0, NULL, pa_head->last};
-
 	//list_foreach(&sub_list, &s2, &ea);
-	la.var = p->opr0;
-	list_foreach(&sub_list, &live_calc, &la);
-	printf("%s liveness: %d to %d (%d).\n", la.var->name,
-			la.start, la.end, la.life);
-
-	la.var = p->opr1;
-	sub_list = list_get_it(pa_now->now);
-	if (la.var != NULL && !is_number(la.var->name[0])) {
-		list_foreach(&sub_list, &live_calc, &la);
-		printf("%s liveness: %d to %d (%d).\n", la.var->name,
-				la.start, la.end, la.life);
-	}
-
-	la.var = p->opr2;
-	if (la.var != NULL && !is_number(la.var->name[0])) {
-		list_foreach(&sub_list, &live_calc, &la);
-		printf("%s liveness: %d to %d (%d).\n", la.var->name,
-				la.start, la.end, la.life);
-	}
-	*/
+	
+	heuristic_live(&sub_list, pa_head);
 	printf("===========\n");
 
 	LIST_GO_OVER;
