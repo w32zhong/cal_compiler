@@ -388,27 +388,88 @@ LIST_IT_CALLBK(print_dep)
 	LIST_GO_OVER;
 }
 
+struct live_arg {
+	int start, end, life;
+	var_t *var;
+	struct list_node *end_node;
+};
+
 static
-LIST_IT_CALLBK(just_print)
+LIST_IT_CALLBK(live_calc)
 {
 	LIST_OBJ(struct code_t, p, ln);
-	P_CAST(end_node, struct list_node, pa_extra);
+	P_CAST(la, struct live_arg, pa_extra);
+
+	if (pa_now->now == pa_head->now) {
+		la->start = la->end = p->line_num;
+		la->life = 0; 
+	}
+
+	if (p->line_num > la->start) {
+		if (p->opr1 == la->var || p->opr2 == la->var) {
+			la->end = p->line_num;
+			la->life = p->line_num - la->start;
+		} 
+
+		if (p->opr0 == la->var) {
+			return LIST_RET_BREAK;
+		}
+	}
+
+	if (pa_now->now == la->end_node)
+		return LIST_RET_BREAK;
+	else
+		return LIST_RET_CONTINUE;
+}
+
+struct elim_arg {
+	struct list_node *end_node;
+	struct code_t    *s1;
+};
+
+static
+LIST_IT_CALLBK(eli_s2)
+{
+	LIST_OBJ(struct code_t, p, ln);
+	P_CAST(ea, struct elim_arg, pa_extra);
+	struct code_t *s1 = ea->s1, *s2 = p;
 	
 	_print_code(stdout, p);
 
-	if (pa_now->now == end_node)
+	if (pa_now->now == ea->end_node)
 		return LIST_RET_BREAK;
 	else
 		return LIST_RET_CONTINUE;
 }
 
 static
-LIST_IT_CALLBK(elimination)
+LIST_IT_CALLBK(eli_s1)
 {
 	LIST_OBJ(struct code_t, p, ln);
-	
 	struct list_it sub_list = list_get_it(pa_now->now);
-	list_foreach(&sub_list, &just_print, pa_head->last);
+	struct elim_arg ea = {pa_head->last, p}; 
+	struct live_arg la = {0, 0, 0, NULL, pa_head->last};
+
+	//list_foreach(&sub_list, &s2, &ea);
+	la.var = p->opr0;
+	list_foreach(&sub_list, &live_calc, &la);
+	printf("%s liveness: %d to %d (%d).\n", la.var->name,
+			la.start, la.end, la.life);
+
+	la.var = p->opr1;
+	sub_list = list_get_it(pa_now->now);
+	if (la.var != NULL && !is_number(la.var->name[0])) {
+		list_foreach(&sub_list, &live_calc, &la);
+		printf("%s liveness: %d to %d (%d).\n", la.var->name,
+				la.start, la.end, la.life);
+	}
+
+	la.var = p->opr2;
+	if (la.var != NULL && !is_number(la.var->name[0])) {
+		list_foreach(&sub_list, &live_calc, &la);
+		printf("%s liveness: %d to %d (%d).\n", la.var->name,
+				la.start, la.end, la.life);
+	}
 	printf("===========\n");
 
 	LIST_GO_OVER;
@@ -419,12 +480,13 @@ int main()
 	FILE *cf = fopen("output.c", "w");
 	yyparse();
 	
-	list_foreach(&code_list, &elimination, NULL);
+	printf("variables:\n"); 
+	var_print();
 
 	printf("three-address code:\n"); 
 	code_print(); 
 
-	//var_print();
+	list_foreach(&code_list, &eli_s1, NULL);
 
 	if (cf) {
 		printf("generate C file...\n");
@@ -441,8 +503,9 @@ int main()
 	fprintf(cf, "\treturn 0; \n} \n");
 	fclose(cf);
 
-	printf("dependency: \n");
+	/*printf("dependency: \n");
 	list_foreach(&code_list, &print_dep, NULL);
+	*/
 
 	list_foreach(&var_list, &release_var, NULL);
 	list_foreach(&code_list, &release_code, NULL);
