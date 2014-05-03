@@ -41,7 +41,7 @@ char          *tmp_name();
 %start program
 
 %%
-program : { printf("three-address code:\n"); code_print(); /* var_print(); */ }
+program :
         | stmt program ;
 
 stmt : expr '\n' {  }
@@ -167,23 +167,26 @@ LIST_IT_CALLBK(id_var)
 	LIST_GO_OVER;
 }
 
+void _print_code(FILE *f, struct code_t *p)
+{
+	if (p->op == '+' || (p->op == '-' && p->opr1 != NULL) ||
+	    p->op == '*' || p->op == '/')
+		fprintf(f, "S%d:\t%s = %s %c %s;\n", p->line_num, 
+			p->opr0->name, p->opr1->name, p->op, p->opr2->name);
+	else if (p->op == '-')
+		fprintf(f, "S%d:\t%s = %c %s;\n", p->line_num, 
+			p->opr0->name, p->op, p->opr2->name);
+	else if (p->op == '=')
+		fprintf(f, "S%d:\t%s %c %s;\n", p->line_num,
+			p->opr0->name, p->op, p->opr2->name);
+}
+
 static
 LIST_IT_CALLBK(print_code)
 {
 	LIST_OBJ(struct code_t, p, ln);
-	if (p->op == '+' || (p->op == '-' && p->opr1 != NULL) ||
-	    p->op == '*' || p->op == '/')
-		printf(" %s = %s %c %s;\n", 
-			p->opr0->name, p->opr1->name, p->op, p->opr2->name);
-	else if (p->op == '-')
-		printf(" %s = %c %s;\n", 
-			p->opr0->name, p->op, p->opr2->name);
-	else if (p->op == '=')
-		printf(" %s %c %s;\n", 
-			p->opr0->name, p->op, p->opr2->name);
-
+	_print_code(stdout, p);
 	LIST_GO_OVER;
-	
 }
 
 static
@@ -282,18 +285,7 @@ LIST_IT_CALLBK(print_c_code)
 {
 	LIST_OBJ(struct code_t, p, ln);
 	P_CAST(cf, FILE, pa_extra);
-
-	if (p->op == '+' || (p->op == '-' && p->opr1 != NULL) ||
-	    p->op == '*' || p->op == '/')
-		fprintf(cf, "S%d:\t%s = %s %c %s;\n", p->line_num, 
-			p->opr0->name, p->opr1->name, p->op, p->opr2->name);
-	else if (p->op == '-')
-		fprintf(cf, "S%d:\t%s = %c %s;\n", p->line_num, 
-			p->opr0->name, p->op, p->opr2->name);
-	else if (p->op == '=')
-		fprintf(cf, "S%d:\t%s %c %s;\n", p->line_num,
-			p->opr0->name, p->op, p->opr2->name);
-	
+	_print_code(cf, p);
 	LIST_GO_OVER;
 }
 
@@ -396,10 +388,43 @@ LIST_IT_CALLBK(print_dep)
 	LIST_GO_OVER;
 }
 
+static
+LIST_IT_CALLBK(just_print)
+{
+	LIST_OBJ(struct code_t, p, ln);
+	P_CAST(end_node, struct list_node, pa_extra);
+	
+	_print_code(stdout, p);
+
+	if (pa_now->now == end_node)
+		return LIST_RET_BREAK;
+	else
+		return LIST_RET_CONTINUE;
+}
+
+static
+LIST_IT_CALLBK(elimination)
+{
+	LIST_OBJ(struct code_t, p, ln);
+	
+	struct list_it sub_list = list_get_it(pa_now->now);
+	list_foreach(&sub_list, &just_print, pa_head->last);
+	printf("===========\n");
+
+	LIST_GO_OVER;
+}
+
 int main() 
 {
 	FILE *cf = fopen("output.c", "w");
 	yyparse();
+	
+	list_foreach(&code_list, &elimination, NULL);
+
+	printf("three-address code:\n"); 
+	code_print(); 
+
+	//var_print();
 
 	if (cf) {
 		printf("generate C file...\n");
