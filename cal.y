@@ -448,6 +448,7 @@ LIST_IT_CALLBK(eli_s1)
 	LIST_OBJ(struct code_t, p, ln);
 	struct list_it sub_list = list_get_it(pa_now->now);
 	struct elim_arg ea = {pa_head->last, p}; 
+	/*
 	struct live_arg la = {0, 0, 0, NULL, pa_head->last};
 
 	//list_foreach(&sub_list, &s2, &ea);
@@ -470,6 +471,7 @@ LIST_IT_CALLBK(eli_s1)
 		printf("%s liveness: %d to %d (%d).\n", la.var->name,
 				la.start, la.end, la.life);
 	}
+	*/
 	printf("===========\n");
 
 	LIST_GO_OVER;
