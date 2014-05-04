@@ -177,8 +177,15 @@ LIST_IT_CALLBK(id_var)
 	LIST_GO_OVER;
 }
 
+#define ANSI_COLOR_RST     "\e[0m"
+#define ANSI_COLOR_RED     "\x1b[31m"
+#define ANSI_COLOR_CYAN    "\x1b[36m"
+
 void _print_code(FILE *f, struct code_t *p)
 {
+	if (f == stdout) 
+		printf(ANSI_COLOR_RED); //color rocks
+
 	if (p->op == '+' || (p->op == '-' && p->opr1 != NULL) ||
 	    p->op == '*' || p->op == '/') {
 		fprintf(f, "S%d:\t", p->line_num);
@@ -200,6 +207,9 @@ void _print_code(FILE *f, struct code_t *p)
 	}
 
 	fprintf(f, ";\n");
+	
+	if (f == stdout) 
+		printf(ANSI_COLOR_RST); //color rocks
 }
 
 static
