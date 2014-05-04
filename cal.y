@@ -521,6 +521,16 @@ int elimination_cse(struct code_t *s1, struct code_t *s2,
 			} else if (s1->opr2 == s2->opr2) {
 				ELI_EVAL(s2->opr2 = s1->opr0);
 			}
+		} else {
+			if (s1->op == '=') {
+				if (s2->opr2 == s1->opr2) {
+					ELI_EVAL(s2->opr2 = s1->opr0);
+				}
+			} else if (s1->op == '-' && s2->op == '-') {
+				if (s2->opr2 == s1->opr2) {
+					ELI_EVAL(s2->opr2 = s1->opr0);
+				}
+			}
 		}
 	}
 
@@ -614,9 +624,10 @@ LIST_IT_CALLBK(_2ssa_s1)
 	_2sa.end_node = pa_head->last;
 	
 	if (!_2sa.dead->ssa_use) {
-		printf("rm ");
+		/* printf("rm ");
 		_print_var(stdout, _2sa.dead);
 		printf("\n");
+		*/
 
 		list_detach_one(&_2sa.dead->ln, &var_list, NULL, NULL);
 		free(_2sa.dead->name);
@@ -633,36 +644,33 @@ LIST_IT_CALLBK(_2ssa_s1)
 	LIST_GO_OVER;
 }
 
+void pseudo_yyparse()
+{
+	var_t *a = var_map("a");
+	var_t *b = var_map("b");
+	var_t *c = var_map("c");
+	var_t *t = var_map("t");
+	code_gen(t , a, '+', b);
+	code_gen(t , NULL, '=', b);
+	code_gen(c , a, '+', b);
+}
+
 int main() 
 {
 	FILE *cf = fopen("output.c", "w");
 
-    /*var_t *a = var_map("a");
-    var_t *b = var_map("b");
-    var_t *c = var_map("c");
-    var_t *t = var_map("t");
-    code_gen(t , a, '+', b);
-    code_gen(t , NULL, '=', b);
-    code_gen(c , a, '+', b);
-	*/
-	yyparse();
+	pseudo_yyparse();
+	//yyparse();
 	
-	printf("variables:\n"); 
-	var_print();
-
-	printf("three-address code:\n"); 
-	code_print(); 
-
-	list_foreach(&code_list, &_2ssa_s1, NULL);
-
-	printf("variables:\n"); 
-	var_print();
-
-	printf("three-address code:\n"); 
-	code_print(); 
 	/*
-	list_foreach(&code_list, &eli_s1, NULL);
+	printf("variables:\n"); 
+	var_print();
+	*/
 
+	printf("three-address code:\n"); 
+	code_print(); 
+
+	/*
 	if (cf) {
 		printf("generate C file...\n");
 	} else {
@@ -682,6 +690,13 @@ int main()
 	/*printf("dependency: \n");
 	list_foreach(&code_list, &print_dep, NULL);
 	*/
+	
+	printf("SSA form:\n"); 
+	list_foreach(&code_list, &_2ssa_s1, NULL);
+	code_print(); 
+
+	list_foreach(&code_list, &eli_s1, NULL);
+
 
 	list_foreach(&var_list, &release_var, NULL);
 	list_foreach(&code_list, &release_code, NULL);
