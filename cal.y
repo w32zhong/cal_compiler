@@ -515,7 +515,7 @@ int elimination_cse(struct code_t *s1, struct code_t *s2,
 		}
 	} else {
 	
-		if (s2->opr1 != NULL) {
+		if (s2->opr1 != NULL && s1->op != '-') {
 			if (s1->opr2 == s2->opr1) {
 				ELI_EVAL(s2->opr1 = s1->opr0);
 			} else if (s1->opr2 == s2->opr2) {
@@ -529,6 +529,50 @@ int elimination_cse(struct code_t *s1, struct code_t *s2,
 			} else if (s1->op == '-' && s2->op == '-') {
 				if (s2->opr2 == s1->opr2) {
 					ELI_EVAL(s2->opr2 = s1->opr0);
+				}
+			}
+		}
+	}
+
+	new_s2 = *s2;
+	*s2 = old_s2;
+
+	return -1;
+}
+
+int elimination_ce(struct code_t *s1, struct code_t *s2,
+		struct list_it *sub_list, struct list_it *pa_head)
+{
+	struct code_t new_s2, old_s2 = *s2;
+	int live1, live2;
+
+	if (s1->opr1 != NULL) {
+		if (s2->opr1 == NULL && s2->op == '=') { 
+			if (s1->opr0 == s2->opr2) {
+				ELI_EVAL(
+						s2->opr1 = s1->opr1;
+						s2->op = s1->op;
+						s2->opr2 = s1->opr2
+						);
+			}
+		}
+	} else {
+		if (s2->opr1 != NULL) {
+			if (s2->opr1 == s1->opr0) {
+				ELI_EVAL(s2->opr1 = s1->opr2);
+			}
+			if (s2->opr2 == s1->opr0) {
+				ELI_EVAL(s2->opr2 = s1->opr2);
+			}
+		} else {
+			if (s2->opr2 == s1->opr0) {
+				if (s1->op == '=') {
+					ELI_EVAL(s2->opr2 = s1->opr2);
+				} else if (s1->op == '-' && s2->op == '=') {
+					ELI_EVAL(
+							s2->op = '-';
+							s2->opr2 = s1->opr2
+							);
 				}
 			}
 		}
@@ -555,6 +599,7 @@ LIST_IT_CALLBK(eli_s2)
 	
 	if (s1 != s2) {
 		elimination_cse(s1, s2, ea->sub_list, pa_head);
+		elimination_ce(s1, s2, ea->sub_list, pa_head);
 	}
 
 	if (pa_now->now == ea->end_node)
@@ -644,61 +689,13 @@ LIST_IT_CALLBK(_2ssa_s1)
 	LIST_GO_OVER;
 }
 
-void pseudo_yyparse_1()
-{
-	var_t *a = var_map("a");
-	var_t *b = var_map("b");
-	var_t *c = var_map("c");
-	var_t *d = var_map("d");
-	code_gen(a , b, '+', c);
-	code_gen(d , b, '+', c);
-}
-
-void pseudo_yyparse_2()
-{
-	var_t *a = var_map("a");
-	var_t *b = var_map("b");
-	var_t *c = var_map("c");
-	var_t *d = var_map("d");
-	code_gen(a , NULL, '=', d);
-	code_gen(b , c, '+', d);
-}
-
-void pseudo_yyparse_3()
-{
-	var_t *a = var_map("a");
-	var_t *b = var_map("b");
-	var_t *c = var_map("c");
-	var_t *d = var_map("d");
-	code_gen(a , NULL, '=', d);
-	code_gen(b , NULL, '=', d);
-}
-
-void pseudo_yyparse_4()
-{
-	var_t *a = var_map("a");
-	var_t *b = var_map("b");
-	var_t *c = var_map("c");
-	var_t *d = var_map("d");
-	code_gen(a , NULL, '-', d);
-	code_gen(b , NULL, '-', d);
-}
-
-void pseudo_yyparse_5()
-{
-	var_t *a = var_map("a");
-	var_t *b = var_map("b");
-	var_t *c = var_map("c");
-	var_t *d = var_map("d");
-	code_gen(a , NULL, '=', d);
-	code_gen(b , NULL, '-', d);
-}
+#include "pseudo_test.c"
 
 int main() 
 {
 	FILE *cf = fopen("output.c", "w");
 
-	pseudo_yyparse_5();
+	pseudo_test_ce_5();
 	//yyparse();
 	
 	/*
