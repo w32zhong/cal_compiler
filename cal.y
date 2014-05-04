@@ -10,6 +10,7 @@ typedef struct VAR_T {
 	struct list_node ln;
 	char *name;
 	int   ssa_sub;
+	int   ssa_use;
 } var_t;
 
 struct code_t {
@@ -251,6 +252,7 @@ var_t *var_map(char *name)
 		LIST_NODE_CONS(pa.var->ln);
 		pa.var->name = strdup(name);
 		pa.var->ssa_sub = 0;
+		pa.var->ssa_use = 0;
 
 		list_insert_one_at_tail(&pa.var->ln, &var_list, NULL, NULL);
 	}
@@ -602,6 +604,7 @@ LIST_IT_CALLBK(_2ssa_s1)
 	LIST_NODE_CONS(_2sa.new->ln);
 	_2sa.new->name = strdup(p->opr0->name);
 	_2sa.new->ssa_sub = p->opr0->ssa_sub + 1;
+	_2sa.new->ssa_use = 1;
 	list_insert_one_at_tail(&_2sa.new->ln, &var_list, NULL, NULL);
 
 	_2sa.dead = p->opr0;
@@ -609,6 +612,21 @@ LIST_IT_CALLBK(_2ssa_s1)
 
 	_2sa.s1 = p;
 	_2sa.end_node = pa_head->last;
+	
+	if (!_2sa.dead->ssa_use) {
+		printf("rm ");
+		_print_var(stdout, _2sa.dead);
+		printf("\n");
+
+		list_detach_one(&_2sa.dead->ln, &var_list, NULL, NULL);
+		free(_2sa.dead->name);
+		free(_2sa.dead);
+	}
+
+	if (p->opr1 != NULL) 
+		p->opr1->ssa_use = 1;
+	if (p->opr2 != NULL) 
+		p->opr2->ssa_use = 1;
 
 	list_foreach(&sub_list, &_2ssa_s2, &_2sa);
 
