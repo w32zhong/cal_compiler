@@ -644,22 +644,61 @@ LIST_IT_CALLBK(_2ssa_s1)
 	LIST_GO_OVER;
 }
 
-void pseudo_yyparse()
+void pseudo_yyparse_1()
 {
 	var_t *a = var_map("a");
 	var_t *b = var_map("b");
 	var_t *c = var_map("c");
-	var_t *t = var_map("t");
-	code_gen(t , a, '+', b);
-	code_gen(t , NULL, '=', b);
-	code_gen(c , a, '+', b);
+	var_t *d = var_map("d");
+	code_gen(a , b, '+', c);
+	code_gen(d , b, '+', c);
+}
+
+void pseudo_yyparse_2()
+{
+	var_t *a = var_map("a");
+	var_t *b = var_map("b");
+	var_t *c = var_map("c");
+	var_t *d = var_map("d");
+	code_gen(a , NULL, '=', d);
+	code_gen(b , c, '+', d);
+}
+
+void pseudo_yyparse_3()
+{
+	var_t *a = var_map("a");
+	var_t *b = var_map("b");
+	var_t *c = var_map("c");
+	var_t *d = var_map("d");
+	code_gen(a , NULL, '=', d);
+	code_gen(b , NULL, '=', d);
+}
+
+void pseudo_yyparse_4()
+{
+	var_t *a = var_map("a");
+	var_t *b = var_map("b");
+	var_t *c = var_map("c");
+	var_t *d = var_map("d");
+	code_gen(a , NULL, '-', d);
+	code_gen(b , NULL, '-', d);
+}
+
+void pseudo_yyparse_5()
+{
+	var_t *a = var_map("a");
+	var_t *b = var_map("b");
+	var_t *c = var_map("c");
+	var_t *d = var_map("d");
+	code_gen(a , NULL, '=', d);
+	code_gen(b , NULL, '-', d);
 }
 
 int main() 
 {
 	FILE *cf = fopen("output.c", "w");
 
-	pseudo_yyparse();
+	pseudo_yyparse_5();
 	//yyparse();
 	
 	/*
