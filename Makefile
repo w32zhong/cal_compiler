@@ -15,6 +15,7 @@ lex.yy.c: cal.l
 parse = bison --verbose --report=solved -d $^
 %.tab.h %.tab.c: %.y 
 	$(parse) 2>&1 | grep --color conflicts || $(parse) 
+	ctags --langmap=c:.c.y $^
 
 clean:
 	find . -mindepth 1 \( -path './.git' -o -name "*.[yl]" -o -name "list*" -o -name "README.md" -o -name "test_input*" -o -name "Makefile" -o -name "*.swp" \) -prune -o -print | xargs rm -f

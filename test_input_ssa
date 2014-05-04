@@ -1,0 +1,7 @@
+a=2
+b=a+b
+a=b+a
+c=6+a
+a=b
+a=a
+c=a
