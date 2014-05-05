@@ -454,6 +454,35 @@ LIST_IT_CALLBK(live_calc)
 		return LIST_RET_CONTINUE;
 }
 
+#define CONST_LONG_LIVENESS 1000
+
+void get_liveness(var_t *var, struct list_it *sub_list,
+		struct live_arg *la)
+{
+	struct code_t *code = MEMBER_2_STRUCT(sub_list->now, 
+			struct code_t, ln);
+	char *str = var->name;
+
+	if (var == NULL || is_number(str[0])) {
+		la->start = la->end = code->line_num;
+		la->life = 0;
+		return;
+
+	} else if (!is_number(str[strlen(str) - 1])) {
+		printf("long-live variable ");
+		la->start = code->line_num;
+		la->end = la->start + CONST_LONG_LIVENESS;
+		la->life = CONST_LONG_LIVENESS;
+	} else {
+		printf("temporal variable ");
+		la->var = var;
+		list_foreach(sub_list, &live_calc, la);
+	}
+	
+	printf("%s liveness: %d to %d (%d).\n", var->name,
+			la->start, la->end, la->life);
+}
+
 int heuristic_live(struct list_it *sub_list, struct list_it *pa_head)
 {
 	struct list_it *pa_now = sub_list;
@@ -461,31 +490,15 @@ int heuristic_live(struct list_it *sub_list, struct list_it *pa_head)
 	int res = 0;
 	LIST_OBJ(struct code_t, p, ln);
 
-	la.var = p->opr0;
-	list_foreach(sub_list, &live_calc, &la);
-	res += 2 * la.life;
+	get_liveness(p->opr0, sub_list, &la);
+	res += la.life;
+	
+	get_liveness(p->opr1, sub_list, &la);
+	res += la.life;
 
-	printf("%s liveness: %d to %d (%d).\n", la.var->name,
-			la.start, la.end, la.life);
-
-	la.var = p->opr1;
-	if (la.var != NULL && !is_number(la.var->name[0])) {
-		list_foreach(sub_list, &live_calc, &la);
-		res += la.life;
-
-	printf("%s liveness: %d to %d (%d).\n", la.var->name,
-			la.start, la.end, la.life);
-	}
-
-	la.var = p->opr2;
-	if (la.var != NULL && !is_number(la.var->name[0])) {
-		list_foreach(sub_list, &live_calc, &la);
-		res += la.life;
-
-	printf("%s liveness: %d to %d (%d).\n", la.var->name,
-			la.start, la.end, la.life);
-	}
-
+	get_liveness(p->opr2, sub_list, &la);
+	res += la.life;
+	
 	return res;
 }
 
@@ -496,7 +509,7 @@ int heuristic_live(struct list_it *sub_list, struct list_it *pa_head)
  \
 		printf("liveness in S%d: \n", s1->line_num); \
 		live1 = heuristic_live(sub_list, pa_head); \
-		printf("if no change: h(x) = %d\n", live1); \
+		printf("if no change: sum(liveness) = %d\n", live1); \
  \
 		_stmt; \
 		printf("if S%d is changed to: \n", s2->line_num); \
@@ -504,7 +517,7 @@ int heuristic_live(struct list_it *sub_list, struct list_it *pa_head)
  \
 		printf("liveness in S%d: \n", s1->line_num); \
 		live2 = heuristic_live(sub_list, pa_head); \
-		printf("if changed: h(x) = %d\n", live2)
+		printf("if changed: sum(liveness) = %d\n", live2)
 
 int elimination_cse(struct code_t *s1, struct code_t *s2,
 		struct list_it *sub_list, struct list_it *pa_head)
@@ -740,8 +753,31 @@ LIST_IT_CALLBK(_2ssa_s1)
 }
 
 #include "pseudo_test.c"
-
 int main() 
+{
+	pseudo_test_ce_simple();
+	printf("variables:\n"); 
+	var_print();
+
+	printf("three-address code:\n"); 
+	code_print(); 
+	
+	list_foreach(&code_list, &_2ssa_s1, NULL);
+	printf("variables:\n"); 
+	var_print();
+	printf("SSA form:\n"); 
+	printf(BOLDRED);
+	code_print(); 
+	printf(ANSI_COLOR_RST);
+
+	printf("doing code elimination...\n"); 
+	code_elimination();
+	
+	printf("after code elimination:\n"); 
+	code_print(); 
+}
+
+int main_() 
 {
 	FILE *cf = fopen("output.c", "w");
 
@@ -756,7 +792,6 @@ int main()
 	printf("three-address code:\n"); 
 	code_print(); 
 
-	/*
 	if (cf) {
 		printf("generate C file...\n");
 	} else {
@@ -771,11 +806,9 @@ int main()
 	list_foreach(&var_list, &print_c_print, cf);
 	fprintf(cf, "\treturn 0; \n} \n");
 	fclose(cf);
-	*/
 
-	/*printf("dependency: \n");
+	printf("dependency: \n");
 	list_foreach(&code_list, &print_dep, NULL);
-	*/
 	
 	printf("SSA form:\n"); 
 	list_foreach(&code_list, &_2ssa_s1, NULL);
@@ -788,7 +821,6 @@ int main()
 	
 	printf("after code elimination:\n"); 
 	code_print(); 
-
 
 	list_foreach(&var_list, &release_var, NULL);
 	list_foreach(&code_list, &release_code, NULL);

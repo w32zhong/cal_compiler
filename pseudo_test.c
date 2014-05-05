@@ -97,3 +97,13 @@ void pseudo_test_ce_5()
 	code_gen(a , NULL, '-', d);
 	code_gen(b , NULL, '=', a);
 }
+
+void pseudo_test_ce_simple()
+{
+	var_t *tmp = var_map("tmp0");
+	var_t *a = var_map("a");
+	var_t *b = var_map("b");
+	var_t *c = var_map("c");
+	code_gen(tmp , a, '+', b);
+	code_gen(c , NULL, '=', tmp);
+}
