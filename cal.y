@@ -4,6 +4,15 @@
 #include <string.h> /* for strdup() */
 #include "list.h"   /* for list */
 
+#define ANSI_COLOR_RST     "\e[0m"
+#define ANSI_COLOR_RED     "\x1b[31m"
+#define BOLDRED     "\033[1m\033[31m"      /* Bold Red */
+#define BOLDGREEN   "\033[1m\033[32m"      /* Bold Green */
+#define BOLDYELLOW  "\033[1m\033[33m"      /* Bold Yellow */
+#define BOLDBLUE    "\033[1m\033[34m"      /* Bold Blue */
+#define BOLDMAGENTA "\033[1m\033[35m"      /* Bold Magenta */
+#define BOLDCYAN    "\033[1m\033[36m"      /* Bold Cyan */
+
 extern int line_num;
 
 typedef struct VAR_T {
@@ -177,15 +186,8 @@ LIST_IT_CALLBK(id_var)
 	LIST_GO_OVER;
 }
 
-#define ANSI_COLOR_RST     "\e[0m"
-#define ANSI_COLOR_RED     "\x1b[31m"
-#define ANSI_COLOR_CYAN    "\x1b[36m"
-
 void _print_code(FILE *f, struct code_t *p)
 {
-	if (f == stdout) 
-		printf(ANSI_COLOR_RED); //color rocks
-
 	if (p->op == '+' || (p->op == '-' && p->opr1 != NULL) ||
 	    p->op == '*' || p->op == '/') {
 		fprintf(f, "S%d:\t", p->line_num);
@@ -207,9 +209,6 @@ void _print_code(FILE *f, struct code_t *p)
 	}
 
 	fprintf(f, ";\n");
-	
-	if (f == stdout) 
-		printf(ANSI_COLOR_RST); //color rocks
 }
 
 static
@@ -510,8 +509,8 @@ int heuristic_live(struct list_it *sub_list, struct list_it *pa_head)
 int elimination_cse(struct code_t *s1, struct code_t *s2,
 		struct list_it *sub_list, struct list_it *pa_head)
 {
-	struct code_t new_s2, old_s2 = *s2;
-	int live1, live2;
+	struct code_t old_s2 = *s2;
+	int live1, live2 = -1;
 
 	if (s1->opr1 != NULL) {
 		if (s1->opr1 == s2->opr1 &&
@@ -544,17 +543,28 @@ int elimination_cse(struct code_t *s1, struct code_t *s2,
 		}
 	}
 
-	new_s2 = *s2;
-	*s2 = old_s2;
+	if (live2 != -1) {
+		if (live1 - live2 > 0) {
+			printf(BOLDGREEN
+					"do Common Sub-expression Elimination.\n" 
+					ANSI_COLOR_RST);
+			return 0;
+		} else {
+			printf(BOLDBLUE 
+					"better do nothing.\n" 
+					ANSI_COLOR_RST);
+			*s2 = old_s2;
+		}
+	}
 
-	return -1;
+	return 1;
 }
 
 int elimination_ce(struct code_t *s1, struct code_t *s2,
 		struct list_it *sub_list, struct list_it *pa_head)
 {
-	struct code_t new_s2, old_s2 = *s2;
-	int live1, live2;
+	struct code_t old_s2 = *s2;
+	int live1, live2 = -1;
 
 	if (s1->opr1 != NULL) {
 		if (s2->opr1 == NULL && s2->op == '=') { 
@@ -588,16 +598,28 @@ int elimination_ce(struct code_t *s1, struct code_t *s2,
 		}
 	}
 
-	new_s2 = *s2;
-	*s2 = old_s2;
+	if (live2 != -1) {
+		if (live1 - live2 >= 0) {
+			printf(BOLDGREEN 
+					"do Copy Elimination.\n" 
+					ANSI_COLOR_RST);
+			return 0;
+		} else {
+			printf(BOLDBLUE 
+					"better do nothing.\n" 
+					ANSI_COLOR_RST);
+			*s2 = old_s2;
+		}
+	}
 
-	return -1;
+	return 1;
 }
 
 struct elim_arg {
 	struct list_node *end_node;
 	struct code_t    *s1;
 	struct list_it   *sub_list;
+	int               fixed_point;
 };
 
 static
@@ -608,8 +630,11 @@ LIST_IT_CALLBK(eli_s2)
 	struct code_t *s1 = ea->s1, *s2 = p;
 	
 	if (s1 != s2) {
-		elimination_cse(s1, s2, ea->sub_list, pa_head);
-		elimination_ce(s1, s2, ea->sub_list, pa_head);
+		ea->fixed_point &= 
+			elimination_cse(s1, s2, ea->sub_list, pa_head);
+
+		ea->fixed_point &= 
+			elimination_ce(s1, s2, ea->sub_list, pa_head);
 	}
 
 	if (pa_now->now == ea->end_node)
@@ -622,12 +647,27 @@ static
 LIST_IT_CALLBK(eli_s1)
 {
 	LIST_OBJ(struct code_t, p, ln);
+	P_CAST(ea, struct elim_arg, pa_extra);
 	struct list_it sub_list = list_get_it(pa_now->now);
-	struct elim_arg ea = {pa_head->last, p, &sub_list}; 
+	ea->end_node = pa_head->last;
+	ea->s1       = p;
+	ea->sub_list = &sub_list;
 
-	list_foreach(&sub_list, &eli_s2, &ea);
+	list_foreach(&sub_list, &eli_s2, ea);
 
 	LIST_GO_OVER;
+}
+
+static void code_elimination()
+{
+	struct elim_arg ea;
+	ea.fixed_point = 0;
+	int cnt = 0;
+	while (!ea.fixed_point) {
+		ea.fixed_point = 1;
+		list_foreach(&code_list, &eli_s1, &ea);
+		printf("%dth iteration done.\n", ++cnt);
+	}
 }
 
 struct _2ssa_arg {
@@ -705,8 +745,8 @@ int main()
 {
 	FILE *cf = fopen("output.c", "w");
 
-	pseudo_test_ce_5();
-	//yyparse();
+	//pseudo_test_ce_5();
+	yyparse();
 	
 	/*
 	printf("variables:\n"); 
@@ -739,9 +779,15 @@ int main()
 	
 	printf("SSA form:\n"); 
 	list_foreach(&code_list, &_2ssa_s1, NULL);
+	printf(BOLDRED);
 	code_print(); 
+	printf(ANSI_COLOR_RST);
 
-	list_foreach(&code_list, &eli_s1, NULL);
+	printf("doing code elimination...\n"); 
+	code_elimination();
+	
+	printf("after code elimination:\n"); 
+	code_print(); 
 
 
 	list_foreach(&var_list, &release_var, NULL);
