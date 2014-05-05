@@ -27,6 +27,7 @@ struct code_t {
 	var_t  *opr0, *opr1, *opr2;
 	char    op;
 	int     line_num;
+	int     dead_flag;
 };
 
 struct code_t *code_gen(var_t*, var_t*, char, var_t*);
@@ -280,6 +281,7 @@ struct code_t *code_gen(var_t* opr0,
 	code->opr1 = opr1;
 	code->opr2 = opr2;
 	code->line_num = line_num ++;
+	code->dead_flag = 0;
 
 	list_insert_one_at_tail(&code->ln, &code_list, NULL, NULL);
 	return code;
@@ -672,20 +674,6 @@ LIST_IT_CALLBK(eli_s1)
 	LIST_GO_OVER;
 }
 
-/*
-static void code_elimination()
-{
-	struct elim_arg ea;
-	ea.fixed_point = 0;
-	int cnt = 0;
-	while (!ea.fixed_point) {
-		ea.fixed_point = 1;
-		list_foreach(&code_list, &eli_s1, &ea);
-		printf("%dth iteration done.\n", ++cnt);
-	}
-}
-*/
-
 static void code_optimization()
 {
 	struct elim_arg ea;
@@ -788,8 +776,66 @@ void add_psedu_print_code()
 	list_foreach(&var_list, &_add_psedu_print_code, NULL);
 }
 
+static
+LIST_IT_CALLBK(_dead_flag)
+{
+	BOOL res;
+	LIST_OBJ(struct code_t, p, ln);
+	struct list_it sub_list = list_get_it(pa_now->now);
+	struct live_arg la = {0, 0, 0, NULL, pa_head->last};
+
+	printf("destination operator, ");
+	get_liveness(p->opr0, &sub_list, &la);
+
+	if (la.life == 0)
+		p->dead_flag = 1;
+	
+	LIST_GO_OVER;
+}
+
+static
+LIST_IT_CALLBK(_dead_eli)
+{
+	BOOL res;
+	LIST_OBJ(struct code_t, p, ln);
+
+	if (p->dead_flag) {
+		res = list_detach_one(pa_now->now, 
+				pa_head, pa_now, pa_fwd);
+
+		printf("rm code:\n");
+		_print_code(stdout, p);
+		free(p);
+		return res;
+	}
+	
+	LIST_GO_OVER;
+}
+
+static
+LIST_IT_CALLBK(_code_renumber)
+{
+	BOOL res;
+	LIST_OBJ(struct code_t, p, ln);
+	P_CAST(num, int, pa_extra);
+
+	p->line_num = *num;
+	(*num) ++;
+
+	LIST_GO_OVER;
+}
+
+static void code_dead_elimination()
+{
+	int num = 0;
+	list_foreach(&code_list, &_dead_flag, NULL);
+	list_foreach(&code_list, &_dead_eli, NULL);
+	printf("renumber code...\n");
+	list_foreach(&code_list, &_code_renumber, &num);
+}
+
 #include "pseudo_test.c"
-#define CAL_DEBUG 1
+#define CAL_DEBUG 0
 
 int main() 
 {
@@ -842,8 +888,16 @@ int main()
 
 	printf("doing code optimization...\n"); 
 	code_optimization();
-	
+
 	printf("after code optimization:\n"); 
+	printf(BOLDGREEN);
+	code_print(); 
+	printf(ANSI_COLOR_RST);
+	
+	printf("doing dead code elimination...\n"); 
+	code_dead_elimination();
+	
+	printf("after dead code elimination...\n"); 
 	printf(BOLDGREEN);
 	code_print(); 
 	printf(ANSI_COLOR_RST);
