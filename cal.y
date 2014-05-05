@@ -765,7 +765,7 @@ LIST_IT_CALLBK(_add_psedu_print_code)
 	if (p != NULL && !is_number(str[0]) &&
 			!is_number(str[strlen(str) - 1])) {
 		v = var_map(tmp_name());
-		code_gen(v , NULL, '=', p);
+		code_gen(v , NULL, '-', p);
 	}
 
 	LIST_GO_OVER;
