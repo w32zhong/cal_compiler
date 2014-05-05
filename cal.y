@@ -131,6 +131,11 @@ int line_num = 1;
 struct list_it var_list = {NULL, NULL};
 struct list_it code_list = {NULL, NULL};
 
+char is_number(char c)
+{
+	return (48 <= c && c <= 57);
+}
+
 char *tmp_name()
 {
 	static int tmp_cnt = 0;
@@ -244,11 +249,6 @@ LIST_IT_CALLBK(release_code)
 	free(p);
 	
 	return res;
-}
-
-char is_number(char c)
-{
-	return (48 <= c && c <= 57);
 }
 
 var_t *var_map(char *name)
@@ -461,26 +461,27 @@ void get_liveness(var_t *var, struct list_it *sub_list,
 {
 	struct code_t *code = MEMBER_2_STRUCT(sub_list->now, 
 			struct code_t, ln);
-	char *str = var->name;
+	char *str;
 
-	if (var == NULL || is_number(str[0])) {
+	if (var == NULL) {
+no_life:
 		la->start = la->end = code->line_num;
 		la->life = 0;
 		return;
 
-	} else if (!is_number(str[strlen(str) - 1])) {
-		printf("long-live variable ");
-		la->start = code->line_num;
-		la->end = la->start + CONST_LONG_LIVENESS;
-		la->life = CONST_LONG_LIVENESS;
 	} else {
-		printf("temporal variable ");
-		la->var = var;
-		list_foreach(sub_list, &live_calc, la);
+		str = var->name;
+		if (is_number(str[0])) {
+			goto no_life;
+		} else {
+			la->var = var;
+			list_foreach(sub_list, &live_calc, la);
+		}
+
+		_print_var(stdout, var);
+		printf(" liveness: %d to %d (%d).\n",
+				la->start, la->end, la->life);
 	}
-	
-	printf("%s liveness: %d to %d (%d).\n", var->name,
-			la->start, la->end, la->life);
 }
 
 int heuristic_live(struct list_it *sub_list, struct list_it *pa_head)
@@ -495,7 +496,7 @@ int heuristic_live(struct list_it *sub_list, struct list_it *pa_head)
 	
 	get_liveness(p->opr1, sub_list, &la);
 	res += la.life;
-
+	
 	get_liveness(p->opr2, sub_list, &la);
 	res += la.life;
 	
@@ -671,6 +672,7 @@ LIST_IT_CALLBK(eli_s1)
 	LIST_GO_OVER;
 }
 
+/*
 static void code_elimination()
 {
 	struct elim_arg ea;
@@ -680,6 +682,19 @@ static void code_elimination()
 		ea.fixed_point = 1;
 		list_foreach(&code_list, &eli_s1, &ea);
 		printf("%dth iteration done.\n", ++cnt);
+	}
+}
+*/
+
+static void code_optimization()
+{
+	struct elim_arg ea;
+	ea.fixed_point = 0;
+	int cnt = 0;
+	while (!ea.fixed_point) {
+		ea.fixed_point = 1;
+		list_foreach(&code_list, &eli_s1, &ea);
+		printf("CSE/CE %dth iteration done.\n", ++cnt);
 	}
 }
 
@@ -752,37 +767,38 @@ LIST_IT_CALLBK(_2ssa_s1)
 	LIST_GO_OVER;
 }
 
-#include "pseudo_test.c"
-int main() 
+static
+LIST_IT_CALLBK(_add_psedu_print_code)
 {
-	pseudo_test_ce_simple();
-	printf("variables:\n"); 
-	var_print();
-
-	printf("three-address code:\n"); 
-	code_print(); 
+	LIST_OBJ(var_t, p, ln);
+	char *str = p->name;
+	var_t *v;
 	
-	list_foreach(&code_list, &_2ssa_s1, NULL);
-	printf("variables:\n"); 
-	var_print();
-	printf("SSA form:\n"); 
-	printf(BOLDRED);
-	code_print(); 
-	printf(ANSI_COLOR_RST);
+	if (p != NULL && !is_number(str[0]) &&
+			!is_number(str[strlen(str) - 1])) {
+		v = var_map(tmp_name());
+		code_gen(v , NULL, '=', p);
+	}
 
-	printf("doing code elimination...\n"); 
-	code_elimination();
-	
-	printf("after code elimination:\n"); 
-	code_print(); 
+	LIST_GO_OVER;
 }
 
-int main_() 
+void add_psedu_print_code()
 {
-	FILE *cf = fopen("output.c", "w");
+	list_foreach(&var_list, &_add_psedu_print_code, NULL);
+}
 
-	//pseudo_test_ce_5();
-	yyparse();
+#include "pseudo_test.c"
+#define CAL_DEBUG 1
+
+int main() 
+{
+	FILE *cf;
+
+	if (CAL_DEBUG) 
+		pseudo_test_ce_simple();
+	else
+		yyparse();
 	
 	/*
 	printf("variables:\n"); 
@@ -790,37 +806,47 @@ int main_()
 	*/
 
 	printf("three-address code:\n"); 
+	add_psedu_print_code();
+	printf(BOLDBLUE);
 	code_print(); 
+	printf(ANSI_COLOR_RST);
 
-	if (cf) {
-		printf("generate C file...\n");
-	} else {
-		printf("cannot open file for writing.\n");
-		return 0;
+	if (0) {
+		cf = fopen("output.c", "w");
+		if (cf) {
+			printf("generate C file...\n");
+		} else {
+			printf("cannot open file for writing.\n");
+			return 0;
+		}
+
+		fprintf(cf, "#include <stdio.h> \n");
+		fprintf(cf, "int main() \n{ \n");
+		list_foreach(&var_list, &print_c_def, cf);
+		list_foreach(&code_list, &print_c_code, cf);
+		list_foreach(&var_list, &print_c_print, cf);
+		fprintf(cf, "\treturn 0; \n} \n");
+		fclose(cf);
+
+		printf("dependency: \n");
+		list_foreach(&code_list, &print_dep, NULL);
 	}
-
-	fprintf(cf, "#include <stdio.h> \n");
-	fprintf(cf, "int main() \n{ \n");
-	list_foreach(&var_list, &print_c_def, cf);
-	list_foreach(&code_list, &print_c_code, cf);
-	list_foreach(&var_list, &print_c_print, cf);
-	fprintf(cf, "\treturn 0; \n} \n");
-	fclose(cf);
-
-	printf("dependency: \n");
-	list_foreach(&code_list, &print_dep, NULL);
+	
+	printf("transforming to SSA...\n");
+	list_foreach(&code_list, &_2ssa_s1, NULL);
 	
 	printf("SSA form:\n"); 
-	list_foreach(&code_list, &_2ssa_s1, NULL);
 	printf(BOLDRED);
 	code_print(); 
 	printf(ANSI_COLOR_RST);
 
-	printf("doing code elimination...\n"); 
-	code_elimination();
+	printf("doing code optimization...\n"); 
+	code_optimization();
 	
-	printf("after code elimination:\n"); 
+	printf("after code optimization:\n"); 
+	printf(BOLDGREEN);
 	code_print(); 
+	printf(ANSI_COLOR_RST);
 
 	list_foreach(&var_list, &release_var, NULL);
 	list_foreach(&code_list, &release_code, NULL);
