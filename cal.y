@@ -31,6 +31,7 @@ struct code_t {
 
 	struct list_it ddg_in;
 	struct list_it ddg_out;
+	int            ddg_weight;
 };
 
 struct ddg_li_t {
@@ -299,6 +300,7 @@ struct code_t *code_gen(var_t* opr0,
 
 	LIST_CONS(code->ddg_in);
 	LIST_CONS(code->ddg_out);
+	code->ddg_weight = 0;
 
 	list_insert_one_at_tail(&code->ln, &code_list, NULL, NULL);
 	return code;
@@ -941,11 +943,21 @@ LIST_IT_CALLBK(_ddg_print)
 	LIST_OBJ(struct code_t, p, ln);
 
 	printf("in: ");
+	printf(BOLDBLUE);
 	list_foreach(&p->ddg_in, &_ddg_link_print, NULL);
+	printf(ANSI_COLOR_RST);
 	printf("\n");
+
+	printf("(w=" BOLDGREEN "%d" ANSI_COLOR_RST ") ",
+			p->ddg_weight);
+	printf(BOLDRED);
 	_print_code(stdout, p);
+	printf(ANSI_COLOR_RST);
+
 	printf("out: ");
+	printf(BOLDMAGENTA);
 	list_foreach(&p->ddg_out, &_ddg_link_print, NULL);
+	printf(ANSI_COLOR_RST);
 	printf("\n\n");
 
 	LIST_GO_OVER;
@@ -954,6 +966,67 @@ LIST_IT_CALLBK(_ddg_print)
 static void ddg_print() 
 {
 	list_foreach(&code_list, &_ddg_print, NULL);
+}
+
+int op_weight(struct code_t *p)
+{
+	int w = 0;
+	switch (p->op) {
+		case '+':
+		case '-':
+		case '=':
+			w = 1;
+			break;
+		case '*':
+			w = 4;
+			break;
+		case '/':
+			w = 8;
+			break;
+		default:
+			printf("bad in #%d\n", __LINE__);
+	}
+
+	return w;
+}
+
+#define MAX(_a, _b) \
+	(_a) > (_b) ? (_a) : (_b)
+
+static
+LIST_IT_CALLBK(_ddg_assign_weight)
+{
+	LIST_OBJ(struct ddg_li_t, p, ln);
+	P_CAST(father_w, int, pa_extra);
+	p->code->ddg_weight = MAX(p->code->ddg_weight, 
+			*father_w + op_weight(p->code));
+
+	printf("walk by S%d\n", p->code->line_num);
+	list_foreach(&p->code->ddg_in, &_ddg_assign_weight, 
+			&p->code->ddg_weight);
+
+	LIST_GO_OVER;
+}
+
+static
+LIST_IT_CALLBK(_ddg_root)
+{
+	LIST_OBJ(struct code_t, p, ln);
+
+	if (p->ddg_out.now == NULL) {
+		printf("assign weight from DDG root S%d...\n", 
+				p->line_num);
+		p->ddg_weight = op_weight(p);
+		list_foreach(&p->ddg_in, &_ddg_assign_weight, 
+				&p->ddg_weight);
+	}
+
+	LIST_GO_OVER;
+}
+
+static void ddg_assign_weight() 
+{
+	list_foreach(&code_list, &_ddg_root, NULL);
 }
 
 int main() 
@@ -1036,6 +1109,7 @@ int main()
 	*/
 
 	ddg_cons();
+	ddg_assign_weight();
 	ddg_print();
 
 	list_foreach(&var_list, &release_var, NULL);
