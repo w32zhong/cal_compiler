@@ -120,3 +120,20 @@ void pseudo_test_cse_simple()
 	code_gen(b , NULL, '=', _2);
 	code_gen(c , NULL, '=', _2);
 }
+
+void pseudo_test_ddg()
+{
+	var_t *_2 = var_map("2");
+	var_t *x = var_map("x");
+	var_t *y = var_map("y");
+	var_t *z = var_map("z");
+	var_t *p = var_map("p");
+	var_t *z2 = var_map("z2");
+	var_t *y2 = var_map("y2");
+	code_gen(x , NULL, '=', _2);
+	code_gen(y , NULL, '=', _2);
+	code_gen(z , NULL, '=', x);
+	code_gen(p , x, '+', _2);
+	code_gen(z2 , y, '+', p);
+	code_gen(y2 , NULL, '=', p);
+}

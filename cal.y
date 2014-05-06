@@ -28,6 +28,14 @@ struct code_t {
 	char    op;
 	int     line_num;
 	int     dead_flag;
+
+	struct list_it ddg_in;
+	struct list_it ddg_out;
+};
+
+struct ddg_li_t {
+	struct list_node ln;
+	struct code_t *code;
 };
 
 struct code_t *code_gen(var_t*, var_t*, char, var_t*);
@@ -288,6 +296,9 @@ struct code_t *code_gen(var_t* opr0,
 	code->opr2 = opr2;
 	code->line_num = line_num ++;
 	code->dead_flag = 0;
+
+	LIST_CONS(code->ddg_in);
+	LIST_CONS(code->ddg_out);
 
 	list_insert_one_at_tail(&code->ln, &code_list, NULL, NULL);
 	return code;
@@ -855,7 +866,95 @@ static int code_dead_elimination()
 }
 
 #include "pseudo_test.c"
-#define CAL_DEBUG 0
+#define CAL_DEBUG 1
+
+struct ddg_cons_arg {
+	struct code_t    *s1;
+	struct list_node *end_node;
+};
+
+void _add_link(struct code_t *s1, struct code_t *s2)
+{
+	struct ddg_li_t *li;
+	printf("adding link, from S%d to S%d...\n", 
+			s1->line_num, s2->line_num);
+
+	li = malloc(sizeof(struct ddg_li_t));
+	LIST_NODE_CONS(li->ln);
+	li->code = s2;
+	list_insert_one_at_tail(&li->ln, &s1->ddg_out, NULL, NULL);
+
+	li = malloc(sizeof(struct ddg_li_t));
+	LIST_NODE_CONS(li->ln);
+	li->code = s1;
+	list_insert_one_at_tail(&li->ln, &s2->ddg_in, NULL, NULL);
+}
+
+static
+LIST_IT_CALLBK(_ddg_cons_s2)
+{
+	LIST_OBJ(struct code_t, p, ln);
+	P_CAST(dca, struct ddg_cons_arg, pa_extra);
+	struct code_t *s1 = dca->s1, *s2 = p;
+	
+	if (s1->opr0 == s2->opr1 ||
+		s1->opr0 == s2->opr2)
+		_add_link(s1, s2);
+
+	if (pa_now->now == dca->end_node)
+		return LIST_RET_BREAK;
+	else
+		return LIST_RET_CONTINUE;
+}
+
+static
+LIST_IT_CALLBK(_ddg_cons_s1)
+{
+	LIST_OBJ(struct code_t, p, ln);
+	struct ddg_cons_arg dca;
+	struct list_it sub_list = list_get_it(pa_now->now);
+	dca.end_node = pa_head->last;
+	dca.s1 = p;
+
+	list_foreach(&sub_list, &_ddg_cons_s2, &dca);
+
+	LIST_GO_OVER;
+}
+
+static void ddg_cons() 
+{
+	list_foreach(&code_list, &_ddg_cons_s1, NULL);
+}
+
+static
+LIST_IT_CALLBK(_ddg_link_print)
+{
+	LIST_OBJ(struct ddg_li_t, p, ln);
+	printf("S%d ", p->code->line_num);
+
+	LIST_GO_OVER;
+}
+
+static
+LIST_IT_CALLBK(_ddg_print)
+{
+	LIST_OBJ(struct code_t, p, ln);
+
+	printf("in: ");
+	list_foreach(&p->ddg_in, &_ddg_link_print, NULL);
+	printf("\n");
+	_print_code(stdout, p);
+	printf("out: ");
+	list_foreach(&p->ddg_out, &_ddg_link_print, NULL);
+	printf("\n\n");
+
+	LIST_GO_OVER;
+}
+
+static void ddg_print() 
+{
+	list_foreach(&code_list, &_ddg_print, NULL);
+}
 
 int main() 
 {
@@ -863,7 +962,7 @@ int main()
 	int ncode_last, ncode = 0;
 
 	if (CAL_DEBUG) 
-		pseudo_test_ce_simple();
+		pseudo_test_ddg();
 	else
 		yyparse();
 	
@@ -898,6 +997,7 @@ int main()
 		list_foreach(&code_list, &print_dep, NULL);
 	}
 	
+	/*
 	printf("adding psedu-print code...\n");
 	add_psedu_print_code();
 
@@ -930,8 +1030,13 @@ int main()
 	} while (ncode != ncode_last);
 
 	printf("final code after optimization:\n"); 
-	printf(BOLDGREEN);
+	printf(BOLDMAGENTA);
 	code_print(); 
+	printf(ANSI_COLOR_RST);
+	*/
+
+	ddg_cons();
+	ddg_print();
 
 	list_foreach(&var_list, &release_var, NULL);
 	list_foreach(&code_list, &release_code, NULL);
