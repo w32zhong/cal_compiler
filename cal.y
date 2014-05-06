@@ -212,6 +212,12 @@ void _print_code(FILE *f, struct code_t *p)
 		_print_var(f, p->opr0);
 		fprintf(f, " = ");
 		_print_var(f, p->opr2);
+	} else if (p->op == 'P') {
+		fprintf(f, "S%d:\t", p->line_num);
+		_print_var(f, p->opr0);
+		fprintf(f, " = ");
+		_print_var(f, p->opr2);
+		fprintf(f, " (pseudo-print)");
 	}
 
 	fprintf(f, ";\n");
@@ -645,7 +651,7 @@ LIST_IT_CALLBK(eli_s2)
 	P_CAST(ea, struct elim_arg, pa_extra);
 	struct code_t *s1 = ea->s1, *s2 = p;
 	
-	if (s1 != s2) {
+	if (s1 != s2 && s2->op != 'P') {
 		ea->fixed_point &= 
 			elimination_cse(s1, s2, ea->sub_list, pa_head);
 
@@ -765,7 +771,7 @@ LIST_IT_CALLBK(_add_psedu_print_code)
 	if (p != NULL && !is_number(str[0]) &&
 			!is_number(str[strlen(str) - 1])) {
 		v = var_map(tmp_name());
-		code_gen(v , NULL, '-', p);
+		code_gen(v , NULL, 'P', p);
 	}
 
 	LIST_GO_OVER;
@@ -852,7 +858,6 @@ int main()
 	*/
 
 	printf("three-address code:\n"); 
-	add_psedu_print_code();
 	printf(BOLDBLUE);
 	code_print(); 
 	printf(ANSI_COLOR_RST);
@@ -878,6 +883,9 @@ int main()
 		list_foreach(&code_list, &print_dep, NULL);
 	}
 	
+	printf("adding psedu-print code...\n");
+	add_psedu_print_code();
+
 	printf("transforming to SSA...\n");
 	list_foreach(&code_list, &_2ssa_s1, NULL);
 	
