@@ -790,11 +790,13 @@ LIST_IT_CALLBK(_dead_flag)
 	struct list_it sub_list = list_get_it(pa_now->now);
 	struct live_arg la = {0, 0, 0, NULL, pa_head->last};
 
-	printf("destination operator, ");
-	get_liveness(p->opr0, &sub_list, &la);
+	if (p->op != 'P') {
+		printf("destination operator, ");
+		get_liveness(p->opr0, &sub_list, &la);
 
-	if (la.life == 0)
-		p->dead_flag = 1;
+		if (la.life == 0)
+			p->dead_flag = 1;
+	}
 	
 	LIST_GO_OVER;
 }
@@ -804,11 +806,13 @@ LIST_IT_CALLBK(_dead_eli)
 {
 	BOOL res;
 	LIST_OBJ(struct code_t, p, ln);
+	P_CAST(stop_flag, int, pa_extra);
 
 	if (p->dead_flag) {
 		res = list_detach_one(pa_now->now, 
 				pa_head, pa_now, pa_fwd);
 
+		*stop_flag = 0;
 		printf("rm code:\n");
 		_print_code(stdout, p);
 		free(p);
@@ -825,19 +829,29 @@ LIST_IT_CALLBK(_code_renumber)
 	LIST_OBJ(struct code_t, p, ln);
 	P_CAST(num, int, pa_extra);
 
-	p->line_num = *num;
-	(*num) ++;
-
+	p->line_num = (*num) ++;
+	
 	LIST_GO_OVER;
 }
 
-static void code_dead_elimination()
+static int code_dead_elimination()
 {
 	int num = 0;
-	list_foreach(&code_list, &_dead_flag, NULL);
-	list_foreach(&code_list, &_dead_eli, NULL);
+	int stop_flag = 0;
+	int cnt = 0;
+	while (!stop_flag) {
+		list_foreach(&code_list, &_dead_flag, NULL);
+		stop_flag = 1;
+		list_foreach(&code_list, &_dead_eli, &stop_flag);
+		
+		printf("dead code elimination %dth iteration done.\n", 
+				++cnt);
+	}
+
 	printf("renumber code...\n");
 	list_foreach(&code_list, &_code_renumber, &num);
+
+	return num;
 }
 
 #include "pseudo_test.c"
@@ -846,6 +860,7 @@ static void code_dead_elimination()
 int main() 
 {
 	FILE *cf;
+	int ncode_last, ncode = 0;
 
 	if (CAL_DEBUG) 
 		pseudo_test_ce_simple();
@@ -894,21 +909,29 @@ int main()
 	code_print(); 
 	printf(ANSI_COLOR_RST);
 
-	printf("doing code optimization...\n"); 
-	code_optimization();
+	do {
+		ncode_last = ncode;
 
-	printf("after code optimization:\n"); 
+		printf("doing code optimization...\n"); 
+		code_optimization();
+
+		printf("after code optimization:\n"); 
+		printf(BOLDGREEN);
+		code_print(); 
+		printf(ANSI_COLOR_RST);
+
+		printf("doing dead code elimination...\n"); 
+		ncode = code_dead_elimination();
+
+		printf("after dead code elimination...\n"); 
+		printf(BOLDGREEN);
+		code_print(); 
+		printf(ANSI_COLOR_RST);
+	} while (ncode != ncode_last);
+
+	printf("final code after optimization:\n"); 
 	printf(BOLDGREEN);
 	code_print(); 
-	printf(ANSI_COLOR_RST);
-	
-	printf("doing dead code elimination...\n"); 
-	code_dead_elimination();
-	
-	printf("after dead code elimination...\n"); 
-	printf(BOLDGREEN);
-	code_print(); 
-	printf(ANSI_COLOR_RST);
 
 	list_foreach(&var_list, &release_var, NULL);
 	list_foreach(&code_list, &release_code, NULL);
