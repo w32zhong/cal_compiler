@@ -35,6 +35,7 @@ struct code_t {
 	
 	struct list_node ln_ready;
 	struct list_node ln_active;
+	int      schedu_cycle;
 };
 
 struct ddg_li_t {
@@ -1047,13 +1048,91 @@ LIST_IT_CALLBK(_init_ready_li)
 	LIST_GO_OVER;
 }
 
+static
+LIST_IT_CALLBK(_print_ready_li)
+{
+	LIST_OBJ(struct code_t, p, ln_ready);
+
+	printf("S%d", p->line_num);
+	
+	if (pa_now->now == pa_head->last) {
+		printf(".");
+		return LIST_RET_BREAK;
+	} else {
+		printf(", ");
+		return LIST_RET_CONTINUE;
+	}
+}
+
+static
+LIST_IT_CALLBK(_print_active_li)
+{
+	LIST_OBJ(struct code_t, p, ln_active);
+
+	printf("S%d", p->line_num);
+	
+	if (pa_now->now == pa_head->last) {
+		printf(".");
+		return LIST_RET_BREAK;
+	} else {
+		printf(", ");
+		return LIST_RET_CONTINUE;
+	}
+}
+
+struct list_it ready_li = LIST_NULL, active_li = LIST_NULL;
+
+void ready_li_print()
+{
+	printf("ready list: ");
+	if (ready_li.now == NULL)
+		printf("empty.");
+	else 
+		list_foreach(&ready_li, &_print_ready_li, NULL);
+	printf("\n");
+}
+
+void active_li_print()
+{
+	printf("active list: ");
+	if (active_li.now == NULL)
+		printf("empty.");
+	else 
+	list_foreach(&active_li, &_print_active_li, NULL);
+	printf("\n");
+}
+
+static
+LIST_IT_CALLBK(_activity_robin)
+{
+	LIST_OBJ(struct code_t, p, ln_active);
+	P_CAST(cycle, int, pa_extra);
+	int res;
+
+	if (p->schedu_cycle + op_weight(p) < *cycle) {
+		res = list_detach_one(pa_now->now, 
+				pa_head, pa_now, pa_fwd);
+
+		return res;
+	}
+	
+	LIST_GO_OVER;
+}
+
 static int ddg_li_schedu()
 {
-	struct list_it ready_li = LIST_NULL, active_li = LIST_NULL;
 	int cycle = 1;
 
 	list_foreach(&code_list, &_init_ready_li, &ready_li);
-	//if ()
+
+	ready_li_print();
+	active_li_print();
+
+	/* while (active_li.now != NULL 
+			|| ready_li.now != NULL) {
+	} */
+	
+	list_foreach(&active_li, &_activity_robin, NULL);
 }
 
 int main() 
