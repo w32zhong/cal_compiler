@@ -32,10 +32,11 @@ struct code_t {
 	struct list_it ddg_in;
 	struct list_it ddg_out;
 	int            ddg_weight;
+	int            ddg_in_num;
 	
 	struct list_node ln_ready;
 	struct list_node ln_active;
-	int      schedu_cycle;
+	int      start_cycle;
 };
 
 struct ddg_li_t {
@@ -305,6 +306,7 @@ struct code_t *code_gen(var_t* opr0,
 	LIST_CONS(code->ddg_in);
 	LIST_CONS(code->ddg_out);
 	code->ddg_weight = 0;
+	code->ddg_in_num = 0;
 	
 	LIST_NODE_CONS(code->ln_ready);
 	LIST_NODE_CONS(code->ln_active);
@@ -897,6 +899,7 @@ void _add_link(struct code_t *s1, struct code_t *s2)
 	LIST_NODE_CONS(li->ln);
 	li->code = s1;
 	list_insert_one_at_tail(&li->ln, &s2->ddg_in, NULL, NULL);
+	s2->ddg_in_num ++;
 }
 
 static
@@ -949,7 +952,7 @@ LIST_IT_CALLBK(_ddg_print)
 {
 	LIST_OBJ(struct code_t, p, ln);
 
-	printf("in: ");
+	printf("in (num=%d): ", p->ddg_in_num);
 	printf(BOLDBLUE);
 	list_foreach(&p->ddg_in, &_ddg_link_print, NULL);
 	printf(ANSI_COLOR_RST);
@@ -975,7 +978,7 @@ static void ddg_print()
 	list_foreach(&code_list, &_ddg_print, NULL);
 }
 
-int op_weight(struct code_t *p)
+int op_delay(struct code_t *p)
 {
 	int w = 0;
 	switch (p->op) {
@@ -1006,7 +1009,7 @@ LIST_IT_CALLBK(_ddg_assign_weight)
 	LIST_OBJ(struct ddg_li_t, p, ln);
 	P_CAST(father_w, int, pa_extra);
 	p->code->ddg_weight = MAX(p->code->ddg_weight, 
-			*father_w + op_weight(p->code));
+			*father_w + op_delay(p->code));
 
 	printf("walk by S%d\n", p->code->line_num);
 	list_foreach(&p->code->ddg_in, &_ddg_assign_weight, 
@@ -1023,7 +1026,7 @@ LIST_IT_CALLBK(_ddg_root)
 	if (p->ddg_out.now == NULL) {
 		printf("assign weight from DDG root S%d...\n", 
 				p->line_num);
-		p->ddg_weight = op_weight(p);
+		p->ddg_weight = op_delay(p);
 		list_foreach(&p->ddg_in, &_ddg_assign_weight, 
 				&p->ddg_weight);
 	}
@@ -1080,38 +1083,59 @@ LIST_IT_CALLBK(_print_active_li)
 	}
 }
 
-struct list_it ready_li = LIST_NULL, active_li = LIST_NULL;
-
-void ready_li_print()
+void ready_li_print(struct list_it *p)
 {
 	printf("ready list: ");
-	if (ready_li.now == NULL)
+	if (p->now == NULL)
 		printf("empty.");
 	else 
-		list_foreach(&ready_li, &_print_ready_li, NULL);
+		list_foreach(p, &_print_ready_li, NULL);
 	printf("\n");
 }
 
-void active_li_print()
+void active_li_print(struct list_it *p)
 {
 	printf("active list: ");
-	if (active_li.now == NULL)
+	if (p->now == NULL)
 		printf("empty.");
 	else 
-	list_foreach(&active_li, &_print_active_li, NULL);
+		list_foreach(p, &_print_active_li, NULL);
 	printf("\n");
 }
+
+static
+LIST_IT_CALLBK(_ready_propagate)
+{
+	LIST_OBJ(struct ddg_li_t, p, ln);
+	P_CAST(ready_li, struct list_it, pa_extra);
+	p->code->ddg_in_num --;
+	
+	if (0 == p->code->ddg_in_num) {
+		printf("S%d is ready.\n", p->code->line_num);
+	} else {
+		printf("S%d is half ready.\n", p->code->line_num);
+	}
+
+	LIST_GO_OVER;
+}
+
+struct _activity_robin_arg {
+	int cycle;
+	struct list_it *ready_li;
+};
 
 static
 LIST_IT_CALLBK(_activity_robin)
 {
 	LIST_OBJ(struct code_t, p, ln_active);
-	P_CAST(cycle, int, pa_extra);
+	P_CAST(ara, struct _activity_robin_arg, pa_extra);
 	int res;
 
-	if (p->schedu_cycle + op_weight(p) < *cycle) {
+	if (p->start_cycle + op_delay(p) <= ara->cycle) {
 		res = list_detach_one(pa_now->now, 
 				pa_head, pa_now, pa_fwd);
+
+		list_foreach(&p->ddg_out, _ready_propagate, ara->ready_li);
 
 		return res;
 	}
@@ -1119,20 +1143,52 @@ LIST_IT_CALLBK(_activity_robin)
 	LIST_GO_OVER;
 }
 
+static
+LIST_CMP_CALLBK(_w_compare)
+{
+	struct code_t *p0 = MEMBER_2_STRUCT(pa_node0, 
+			struct code_t, ln_ready);
+	struct code_t *p1 = MEMBER_2_STRUCT(pa_node1, 
+			struct code_t, ln_ready);
+	P_CAST(extra, int, pa_extra);
+
+	return p1->ddg_weight > p0->ddg_weight;
+}
+
 static int ddg_li_schedu()
 {
 	int cycle = 1;
+	struct list_it ready_li = LIST_NULL, active_li = LIST_NULL;
+	struct list_node *r_node;
+	struct code_t    *r_code;
+	struct list_sort_arg sort = {&_w_compare, NULL};
+	struct _activity_robin_arg ara = {cycle, &ready_li};
 
 	list_foreach(&code_list, &_init_ready_li, &ready_li);
+	list_sort(&ready_li, &sort);
 
-	ready_li_print();
-	active_li_print();
+	ready_li_print(&ready_li);
+	active_li_print(&active_li);
 
 	/* while (active_li.now != NULL 
 			|| ready_li.now != NULL) {
 	} */
 	
-	list_foreach(&active_li, &_activity_robin, NULL);
+	{
+		list_foreach(&active_li, &_activity_robin, &ara);
+
+		r_node = ready_li.now;
+		if (r_node != NULL) {
+			list_detach_one(r_node, &ready_li, NULL, NULL);
+			r_code = MEMBER_2_STRUCT(r_node, struct code_t, ln_ready);
+			r_code->start_cycle = cycle;
+			list_insert_one_at_tail(&r_code->ln_active, &active_li, NULL, NULL);
+		}
+
+		ready_li_print(&ready_li);
+		active_li_print(&active_li);
+		cycle ++;
+	}
 }
 
 int main() 
