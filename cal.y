@@ -32,6 +32,9 @@ struct code_t {
 	struct list_it ddg_in;
 	struct list_it ddg_out;
 	int            ddg_weight;
+	
+	struct list_node ln_ready;
+	struct list_node ln_active;
 };
 
 struct ddg_li_t {
@@ -301,6 +304,9 @@ struct code_t *code_gen(var_t* opr0,
 	LIST_CONS(code->ddg_in);
 	LIST_CONS(code->ddg_out);
 	code->ddg_weight = 0;
+	
+	LIST_NODE_CONS(code->ln_ready);
+	LIST_NODE_CONS(code->ln_active);
 
 	list_insert_one_at_tail(&code->ln, &code_list, NULL, NULL);
 	return code;
@@ -1029,6 +1035,27 @@ static void ddg_assign_weight()
 	list_foreach(&code_list, &_ddg_root, NULL);
 }
 
+static
+LIST_IT_CALLBK(_init_ready_li)
+{
+	LIST_OBJ(struct code_t, p, ln);
+	P_CAST(ready_li, struct list_it, pa_extra);
+
+	if (p->ddg_in.now == NULL)
+		list_insert_one_at_tail(&p->ln_ready, ready_li, NULL, NULL);
+
+	LIST_GO_OVER;
+}
+
+static int ddg_li_schedu()
+{
+	struct list_it ready_li = LIST_NULL, active_li = LIST_NULL;
+	int cycle = 1;
+
+	list_foreach(&code_list, &_init_ready_li, &ready_li);
+	//if ()
+}
+
 int main() 
 {
 	FILE *cf;
@@ -1111,6 +1138,7 @@ int main()
 	ddg_cons();
 	ddg_assign_weight();
 	ddg_print();
+	ddg_li_schedu();
 
 	list_foreach(&var_list, &release_var, NULL);
 	list_foreach(&code_list, &release_code, NULL);
