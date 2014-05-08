@@ -1243,7 +1243,7 @@ LIST_IT_CALLBK(_subseq_code)
 
 static int ddg_li_schedu(int opt)
 {
-	int    cycle = 1;
+	int    last_cycle = 0, cycle = 1;
 	struct list_it ready_li = LIST_NULL, active_li = LIST_NULL;
 	struct list_node *r_node;
 	struct code_t    *r_code, *sub_code;
@@ -1288,22 +1288,26 @@ issue:
 					r_code->line_num);
 
 			r_code->start_cycle = cycle;
+			last_cycle = cycle + op_delay(r_code);
+
 			list_insert_one_at_tail(&r_code->ln_active, 
 					&active_li, NULL, NULL);
 		}
 
 		ready_li_print(&ready_li);
 		active_li_print(&active_li);
-		ddg_print();
 
 		cycle ++;
 	}
+
+	return last_cycle;
 }
 
 int main() 
 {
 	FILE *cf;
 	int ncode_last, ncode = 0;
+	int seq_cycles, sch_cycles;
 
 	if (CAL_DEBUG) 
 		pseudo_test_ddg();
@@ -1379,17 +1383,34 @@ int main()
 	printf(ANSI_COLOR_RST);
 	*/
 
-	printf("generating DDG...\n");
+	printf("begin sequential simulation...\n");
+	printf("constructing DDG...\n");
+	ddg_cons();
+	printf("DDG: \n");
+	ddg_print();
+
+	seq_cycles = ddg_li_schedu(0);
+	printf(BOLDRED "total cycles: %d\n" ANSI_COLOR_RST, 
+			seq_cycles);
+	ddg_print();
+	ddg_clean();
+
+	printf("begin list-scheduling...\n");
+	printf("constructing DDG...\n");
 	ddg_cons();
 	ddg_assign_weight();
 	printf("DDG: \n");
 	ddg_print();
-	ddg_li_schedu(1);
-	printf("after schedule: \n");
+
+	sch_cycles = ddg_li_schedu(1);
+	printf(BOLDRED "total cycles: %d\n" ANSI_COLOR_RST, 
+			sch_cycles);
 	ddg_print();
 	ddg_clean();
-	printf("after clean:\n");
-	ddg_print();
+
+	printf("instruction scheduling reduce %d cycle(s) in total.\n",
+			seq_cycles - sch_cycles);
+
 
 	list_foreach(&var_list, &release_var, NULL);
 	list_foreach(&code_list, &release_code, NULL);
