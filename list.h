@@ -275,19 +275,17 @@ static __inline LIST_IT_CALLBK(list_insert)
 		if(__CMP(now)) {
 			list_tk(&expa->it, pa_head);
 			*pa_head = list_get_it(pa_head->last);
-
-		} else if (!__CMP(last)) 
+			return LIST_RET_BREAK;
+		} else if (!__CMP(last)) {
 			list_tk(&expa->it, pa_head);
-
-		return LIST_RET_BREAK;
+			return LIST_RET_BREAK;
+		}
 	} else if (__CMP(now)) {
 		list_tk(&expa->it, pa_now);
 		return LIST_RET_BREAK;
+	} 
 
-	} else
-		return LIST_RET_CONTINUE;
-
-	return 0;
+	return LIST_RET_CONTINUE;
 }
 
 /*
@@ -313,10 +311,11 @@ list_sort(struct list_it *head, struct list_sort_arg *sort)
 		res = list_detach_one(node, head, NULL, NULL);
 		expa.it = list_get_it(node);
 
-		if (tmp_hd.now)
+		if (tmp_hd.now) {
 			list_foreach(&tmp_hd, &list_insert, sort);
-		else
+		} else {
 			list_tk(&expa.it, &tmp_hd);
+		}
 	}
 
 	*head = tmp_hd;

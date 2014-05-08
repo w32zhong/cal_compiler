@@ -234,7 +234,7 @@ void _print_code(FILE *f, struct code_t *p)
 		fprintf(f, " (pseudo-print)");
 	}
 
-	fprintf(f, ";\n");
+	fprintf(f, ";");
 }
 
 static
@@ -242,6 +242,7 @@ LIST_IT_CALLBK(print_code)
 {
 	LIST_OBJ(struct code_t, p, ln);
 	_print_code(stdout, p);
+	printf("\n");
 	LIST_GO_OVER;
 }
 
@@ -310,6 +311,7 @@ struct code_t *code_gen(var_t* opr0,
 	
 	LIST_NODE_CONS(code->ln_ready);
 	LIST_NODE_CONS(code->ln_active);
+	code->start_cycle = -1;
 
 	list_insert_one_at_tail(&code->ln, &code_list, NULL, NULL);
 	return code;
@@ -348,6 +350,7 @@ LIST_IT_CALLBK(print_c_code)
 	LIST_OBJ(struct code_t, p, ln);
 	P_CAST(cf, FILE, pa_extra);
 	_print_code(cf, p);
+	fprintf(cf, "\n");
 	LIST_GO_OVER;
 }
 
@@ -535,8 +538,8 @@ int heuristic_live(struct list_it *sub_list, struct list_it *pa_head)
 
 #define ELI_EVAL(_stmt) \
 		printf("these two code may be optimized:\n"); \
-		_print_code(stdout, s1); \
-		_print_code(stdout, s2); \
+		_print_code(stdout, s1); printf("\n"); \
+		_print_code(stdout, s2); printf("\n"); \
  \
 		printf("liveness in S%d: \n", s1->line_num); \
 		live1 = heuristic_live(sub_list, pa_head); \
@@ -544,7 +547,7 @@ int heuristic_live(struct list_it *sub_list, struct list_it *pa_head)
  \
 		_stmt; \
 		printf("if S%d is changed to: \n", s2->line_num); \
-		_print_code(stdout, s2); \
+		_print_code(stdout, s2); printf("\n"); \
  \
 		printf("liveness in S%d: \n", s1->line_num); \
 		live2 = heuristic_live(sub_list, pa_head); \
@@ -837,6 +840,7 @@ LIST_IT_CALLBK(_dead_eli)
 		*stop_flag = 0;
 		printf("rm code:\n");
 		_print_code(stdout, p);
+		printf("\n");
 		free(p);
 		return res;
 	}
@@ -952,23 +956,22 @@ LIST_IT_CALLBK(_ddg_print)
 {
 	LIST_OBJ(struct code_t, p, ln);
 
-	printf("in (num=%d): ", p->ddg_in_num);
 	printf(BOLDBLUE);
 	list_foreach(&p->ddg_in, &_ddg_link_print, NULL);
 	printf(ANSI_COLOR_RST);
-	printf("\n");
+	printf(" \t-> ");
 
-	printf("(w=" BOLDGREEN "%d" ANSI_COLOR_RST ") ",
-			p->ddg_weight);
 	printf(BOLDRED);
 	_print_code(stdout, p);
+	printf(" (w=%d, cycle=%d, delay=%d) ", p->ddg_weight, 
+			p->start_cycle, op_delay(p));
 	printf(ANSI_COLOR_RST);
 
-	printf("out: ");
+	printf(" \t-> ");
 	printf(BOLDMAGENTA);
 	list_foreach(&p->ddg_out, &_ddg_link_print, NULL);
 	printf(ANSI_COLOR_RST);
-	printf("\n\n");
+	printf("\n");
 
 	LIST_GO_OVER;
 }
@@ -985,7 +988,7 @@ int op_delay(struct code_t *p)
 		case '+':
 		case '-':
 		case '=':
-			w = 1;
+			w = 2;
 			break;
 		case '*':
 			w = 4;
@@ -1056,7 +1059,7 @@ LIST_IT_CALLBK(_print_ready_li)
 {
 	LIST_OBJ(struct code_t, p, ln_ready);
 
-	printf("S%d", p->line_num);
+	printf("S%d(w=%d)", p->line_num, p->ddg_weight);
 	
 	if (pa_now->now == pa_head->last) {
 		printf(".");
@@ -1104,14 +1107,39 @@ void active_li_print(struct list_it *p)
 }
 
 static
-LIST_IT_CALLBK(_ready_propagate)
+LIST_CMP_CALLBK(_w_compare)
+{
+	struct code_t *p0 = MEMBER_2_STRUCT(pa_node0, 
+			struct code_t, ln_ready);
+	struct code_t *p1 = MEMBER_2_STRUCT(pa_node1, 
+			struct code_t, ln_ready);
+	P_CAST(extra, int, pa_extra);
+
+	return p1->ddg_weight < p0->ddg_weight;
+}
+
+static void ready_li_sort(struct list_it *p)
+{
+	struct list_sort_arg sort = {&_w_compare, NULL};
+	list_sort(p, &sort);
+}
+
+static
+LIST_IT_CALLBK(_ready_propagation)
 {
 	LIST_OBJ(struct ddg_li_t, p, ln);
 	P_CAST(ready_li, struct list_it, pa_extra);
 	p->code->ddg_in_num --;
 	
-	if (0 == p->code->ddg_in_num) {
+	if (0 >= p->code->ddg_in_num) {
 		printf("S%d is ready.\n", p->code->line_num);
+		list_insert_one_at_tail(&p->code->ln_ready, ready_li, 
+				NULL, NULL);
+		ready_li_sort(ready_li);
+		
+		printf("sorted, ");
+		ready_li_print(ready_li);
+
 	} else {
 		printf("S%d is half ready.\n", p->code->line_num);
 	}
@@ -1120,7 +1148,7 @@ LIST_IT_CALLBK(_ready_propagate)
 }
 
 struct _activity_robin_arg {
-	int cycle;
+	int            *cycle;
 	struct list_it *ready_li;
 };
 
@@ -1131,11 +1159,14 @@ LIST_IT_CALLBK(_activity_robin)
 	P_CAST(ara, struct _activity_robin_arg, pa_extra);
 	int res;
 
-	if (p->start_cycle + op_delay(p) <= ara->cycle) {
+	if (p->start_cycle + op_delay(p) <= *ara->cycle) {
 		res = list_detach_one(pa_now->now, 
 				pa_head, pa_now, pa_fwd);
+		printf("S%d is off from activity list.\n", p->line_num);
 
-		list_foreach(&p->ddg_out, _ready_propagate, ara->ready_li);
+		printf("doing ready-propagation.\n");
+		list_foreach(&p->ddg_out, _ready_propagation, 
+				ara->ready_li);
 
 		return res;
 	}
@@ -1143,51 +1174,47 @@ LIST_IT_CALLBK(_activity_robin)
 	LIST_GO_OVER;
 }
 
-static
-LIST_CMP_CALLBK(_w_compare)
-{
-	struct code_t *p0 = MEMBER_2_STRUCT(pa_node0, 
-			struct code_t, ln_ready);
-	struct code_t *p1 = MEMBER_2_STRUCT(pa_node1, 
-			struct code_t, ln_ready);
-	P_CAST(extra, int, pa_extra);
-
-	return p1->ddg_weight > p0->ddg_weight;
-}
-
 static int ddg_li_schedu()
 {
-	int cycle = 1;
+	int    cycle = 1;
 	struct list_it ready_li = LIST_NULL, active_li = LIST_NULL;
 	struct list_node *r_node;
 	struct code_t    *r_code;
-	struct list_sort_arg sort = {&_w_compare, NULL};
-	struct _activity_robin_arg ara = {cycle, &ready_li};
+	struct _activity_robin_arg ara = {&cycle, &ready_li};
 
 	list_foreach(&code_list, &_init_ready_li, &ready_li);
-	list_sort(&ready_li, &sort);
+	ready_li_sort(&ready_li);
 
 	ready_li_print(&ready_li);
 	active_li_print(&active_li);
 
-	/* while (active_li.now != NULL 
+	while (active_li.now != NULL 
 			|| ready_li.now != NULL) {
-	} */
-	
-	{
+
+		printf(BOLDBLUE "cycle %d:\n" ANSI_COLOR_RST, cycle);
 		list_foreach(&active_li, &_activity_robin, &ara);
 
 		r_node = ready_li.now;
 		if (r_node != NULL) {
 			list_detach_one(r_node, &ready_li, NULL, NULL);
-			r_code = MEMBER_2_STRUCT(r_node, struct code_t, ln_ready);
+
+			r_code = MEMBER_2_STRUCT(r_node, struct code_t, 
+					ln_ready);
+			printf("issue S%d from ready list...\n", 
+					r_code->line_num);
+
 			r_code->start_cycle = cycle;
-			list_insert_one_at_tail(&r_code->ln_active, &active_li, NULL, NULL);
+			list_insert_one_at_tail(&r_code->ln_active, 
+					&active_li, NULL, NULL);
 		}
 
 		ready_li_print(&ready_li);
 		active_li_print(&active_li);
+		//ddg_print();
+
 		cycle ++;
+		if (cycle >= 10)
+			break;
 	}
 }
 
@@ -1270,12 +1297,17 @@ int main()
 	printf(ANSI_COLOR_RST);
 	*/
 
+	printf("generating DDG...\n");
 	ddg_cons();
 	ddg_assign_weight();
+	printf("DDG: \n");
 	ddg_print();
 	ddg_li_schedu();
+	printf("after schedule: \n");
+	ddg_print();
 
 	list_foreach(&var_list, &release_var, NULL);
 	list_foreach(&code_list, &release_code, NULL);
+
 	return 0;
 }
