@@ -139,3 +139,24 @@ void pseudo_test_ddg()
 	code_gen(y2 , NULL, '=', p);
 	code_gen(x2 , NULL, '=', x);
 }
+
+void pseudo_test_rig()
+{
+	var_t *_3 = var_map("3");
+	var_t *a = var_map("a");
+	var_t *b = var_map("b");
+	var_t *c = var_map("c");
+	var_t *d = var_map("d");
+	var_t *e = var_map("e");
+	var_t *f = var_map("f");
+	var_t *g = var_map("g");
+	var_t *h = var_map("h");
+	code_gen(a , NULL, '=', _3);
+	code_gen(b , a, '+', _3);
+	code_gen(c , a, '*', _3);
+	code_gen(d , a, '-', _3);
+	code_gen(e , a, '/', _3);
+	code_gen(f , b, '*', c);
+	code_gen(g , d, '-', e);
+	code_gen(h , f, '*', g);
+}

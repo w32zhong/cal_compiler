@@ -18,9 +18,20 @@ extern int line_num;
 typedef struct VAR_T {
 	struct list_node ln;
 	char *name;
+
 	int   ssa_sub;
 	int   ssa_use;
+
+	int   live_start;
+	int   live_end;
 } var_t;
+
+typedef struct RIG_NODE_T {
+	struct list_node ln;
+	var_t  *var;
+	int     fan;
+	int     spill;
+} rig_node_t;
 
 struct code_t {
 	struct list_node ln;
@@ -145,6 +156,9 @@ assign : VAR '=' expr
 int line_num = 1;
 struct list_it var_list = {NULL, NULL};
 struct list_it code_list = {NULL, NULL};
+
+struct list_it rig_list = {NULL, NULL};
+struct list_it rig_stack = {NULL, NULL};
 
 char is_number(char c)
 {
@@ -881,7 +895,7 @@ static int code_dead_elimination()
 }
 
 #include "pseudo_test.c"
-#define CAL_DEBUG 0
+#define CAL_DEBUG 1
 
 struct ddg_cons_arg {
 	struct code_t    *s1;
@@ -1331,7 +1345,7 @@ int main()
 	int seq_cycles, sch_cycles;
 
 	if (CAL_DEBUG) 
-		pseudo_test_ddg();
+		pseudo_test_rig();
 	else
 		yyparse();
 	
@@ -1404,6 +1418,7 @@ int main()
 	printf(ANSI_COLOR_RST);
 	*/
 
+	/*
 	printf("doing instruction scheduling...\n");
 	printf("first do sequential simulation...\n");
 	printf("constructing DDG...\n");
@@ -1440,6 +1455,7 @@ int main()
 	printf("instruction scheduling saves %d - %d = %d"
 	       " cycle(s) in total.\n",
 			seq_cycles, sch_cycles, seq_cycles - sch_cycles);
+	*/
 	
 
 	list_foreach(&var_list, &release_var, NULL);
