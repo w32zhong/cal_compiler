@@ -881,7 +881,7 @@ static int code_dead_elimination()
 }
 
 #include "pseudo_test.c"
-#define CAL_DEBUG 1
+#define CAL_DEBUG 0
 
 struct ddg_cons_arg {
 	struct code_t    *s1;
@@ -1165,6 +1165,17 @@ LIST_CMP_CALLBK(_l_compare)
 	return p1->line_num > p0->line_num;
 }
 
+static
+LIST_CMP_CALLBK(_c_compare)
+{
+	struct code_t *p0 = MEMBER_2_STRUCT(pa_node0, 
+			struct code_t, ln);
+	struct code_t *p1 = MEMBER_2_STRUCT(pa_node1, 
+			struct code_t, ln);
+
+	return p1->start_cycle > p0->start_cycle;
+}
+
 struct _activity_robin_arg {
 	int            *cycle;
 	struct list_it *ready_li;
@@ -1303,6 +1314,16 @@ issue:
 	return last_cycle;
 }
 
+void code_cycle_reorder()
+{
+	struct list_sort_arg sort;
+	int num = 0;
+	sort.cmp = _c_compare;
+
+	list_sort(&code_list , &sort);
+	list_foreach(&code_list, &_code_renumber, &num);
+}
+
 int main() 
 {
 	FILE *cf;
@@ -1383,7 +1404,8 @@ int main()
 	printf(ANSI_COLOR_RST);
 	*/
 
-	printf("begin sequential simulation...\n");
+	printf("doing instruction scheduling...\n");
+	printf("first do sequential simulation...\n");
 	printf("constructing DDG...\n");
 	ddg_cons();
 	printf("DDG: \n");
@@ -1403,14 +1425,22 @@ int main()
 	ddg_print();
 
 	sch_cycles = ddg_li_schedu(1);
+	printf("list-scheduling finished.\n");
 	printf(BOLDRED "total cycles: %d\n" ANSI_COLOR_RST, 
 			sch_cycles);
 	ddg_print();
+
+	printf("reorder code...\n");
+	code_cycle_reorder();
+	
+	printf("instruction scheduling final code:\n");
+	ddg_print();
 	ddg_clean();
 
-	printf("instruction scheduling reduce %d cycle(s) in total.\n",
-			seq_cycles - sch_cycles);
-
+	printf("instruction scheduling saves %d - %d = %d"
+	       " cycle(s) in total.\n",
+			seq_cycles, sch_cycles, seq_cycles - sch_cycles);
+	
 
 	list_foreach(&var_list, &release_var, NULL);
 	list_foreach(&code_list, &release_code, NULL);

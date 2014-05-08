@@ -2,5 +2,5 @@ x=4
 y=6
 z=x
 p=x+2
-z=y+p
-y=p
+z1=y+p
+y1=p
