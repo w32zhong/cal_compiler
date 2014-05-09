@@ -501,8 +501,6 @@ LIST_IT_CALLBK(live_calc)
 		return LIST_RET_CONTINUE;
 }
 
-#define CONST_LONG_LIVENESS 1000
-
 void get_liveness(var_t *var, struct list_it *sub_list,
 		struct live_arg *la)
 {
@@ -1338,6 +1336,44 @@ void code_cycle_reorder()
 	list_foreach(&code_list, &_code_renumber, &num);
 }
 
+struct rig_live_def_arg {
+	struct list_it sub_list;
+	var_t *var;
+};
+
+static
+LIST_IT_CALLBK(_rig_live_def)
+{
+	LIST_OBJ(struct code_t, p, ln);
+	P_CAST(rlda, struct rig_live_def_arg, pa_extra);
+
+	if (p->opr0 == rlda->var) {
+		rlda->sub_list = list_get_it(pa_now->now);
+		return LIST_RET_BREAK;
+	}
+
+	LIST_GO_OVER;
+}
+
+static
+LIST_IT_CALLBK(_rig_live_cal)
+{
+	struct live_arg la = {0, 0, 0, NULL, code_list.last};
+	LIST_OBJ(var_t, p, ln);
+	struct rig_live_def_arg rlda = {code_list, p};
+
+	if (is_number(p->name[0]))
+		LIST_GO_OVER;
+
+	list_foreach(&code_list, _rig_live_def, &rlda);
+	get_liveness(p, &rlda.sub_list, &la);
+
+	p->live_start = la.start;
+	p->live_end = la.end;
+	
+	LIST_GO_OVER;
+}
+
 int main() 
 {
 	FILE *cf;
@@ -1456,6 +1492,9 @@ int main()
 	       " cycle(s) in total.\n",
 			seq_cycles, sch_cycles, seq_cycles - sch_cycles);
 	*/
+
+	printf("begin liveness calculation...\n");
+	list_foreach(&var_list, &_rig_live_cal, NULL);
 	
 
 	list_foreach(&var_list, &release_var, NULL);
