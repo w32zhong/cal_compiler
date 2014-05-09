@@ -24,6 +24,7 @@ typedef struct VAR_T {
 
 	int   live_start;
 	int   live_end;
+	int   color;
 } var_t;
 
 struct code_t {
@@ -298,6 +299,10 @@ var_t *var_map(char *name)
 		pa.var->name = strdup(name);
 		pa.var->ssa_sub = 0;
 		pa.var->ssa_use = 0;
+		
+		pa.var->live_start = 0;
+		pa.var->live_end = 0;
+		pa.var->color = 0;
 
 		list_insert_one_at_tail(&pa.var->ln, &var_list, NULL, NULL);
 	}
@@ -1402,11 +1407,11 @@ static
 LIST_IT_CALLBK(_rig_list_print)
 {
 	LIST_OBJ(rig_node_t, p, ln);
-	printf("%s: live=%d~%d, fan=%d, ", 
+	printf("%s: live=%d~%d, fan=%d, color=%d, ", 
 			p->var->name, p->var->live_start, 
-			p->var->live_end, p->fan);
+			p->var->live_end, p->fan, p->var->color);
 	if (p->spill) 
-		printf(" may-spill\n");
+		printf("may-spill\n");
 	else
 		printf("no-spill\n");
 
@@ -1421,6 +1426,8 @@ void rig_print(struct list_it *li)
 struct rig_fan_arg {
 	struct list_node *end_node;
 	rig_node_t       *n1;
+
+	int               if_color_ok;
 };
 
 static
@@ -1437,8 +1444,20 @@ LIST_IT_CALLBK(_rig_fan_s2)
 		goto next;
 	}
 	
-	printf("`%s' interferes with `%s'.\n", n1->var->name,
-			n2->var->name);
+	if (n1->var->color == 0) 
+		printf("`%s' interferes with `%s'.\n", 
+				n1->var->name, n2->var->name);
+
+	if (n2->var->color != 0) /* not a spill-color */
+		if (n1->var->color == n2->var->color) {
+			rfa->if_color_ok = 0;
+			printf("`%s' conflicts with `%s'.\n", 
+					n1->var->name, n2->var->name);
+			return LIST_RET_BREAK;
+		} else
+			printf("`%s' is ok with `%s', whose color=%d.\n", 
+					n1->var->name, n2->var->name, n2->var->color);
+
 	n1->fan ++;
 	n2->fan ++;
 next:
@@ -1453,7 +1472,7 @@ LIST_IT_CALLBK(_rig_fan_s1)
 {
 	LIST_OBJ(rig_node_t, p, ln);
 	struct list_it sub_list = list_get_it(pa_now->now);
-	struct rig_fan_arg rfa = {pa_head->last, p};
+	struct rig_fan_arg rfa = {pa_head->last, p, 0};
 
 	list_foreach(&sub_list, &_rig_fan_s2, &rfa);
 
@@ -1548,6 +1567,49 @@ void rig_forward_pass(int K)
 
 		rig_rm(1, K);
 	}
+}
+
+void rig_reverse_pass(int K) 
+{
+	struct rig_fan_arg rfa;
+	rig_node_t *p;
+
+	while (rig_stack.now) {
+		p = MEMBER_2_STRUCT(rig_stack.last, rig_node_t, ln);
+		list_detach_one(rig_stack.last, &rig_stack, NULL, NULL);
+		printf("pop `%s'.\n", p->var->name);
+
+		if (rig_list.now != NULL) {
+			do {
+				rfa.end_node = rig_list.last;
+				rfa.n1 = p;
+				rfa.if_color_ok = 1;
+				p->var->color ++;
+				printf("try color %d...\n", p->var->color);
+
+				list_foreach(&rig_list, &_rig_fan_s2, &rfa);
+			} while (!rfa.if_color_ok);
+
+			if (p->spill)
+				if(p->var->color > K) {
+					printf("no luck, %s needs to be spilled.\n", 
+							p->var->name);
+					p->var->color = 0; /* spill-color */
+				} else 
+					printf("we are lucky.\n");
+
+		} else
+			p->var->color = 1; /* first-one */
+
+		printf(BOLDBLUE);
+		printf("assign `%s' with color %d.\n", p->var->name, 
+				p->var->color);
+		printf(ANSI_COLOR_RST);
+
+		list_insert_one_at_tail(&p->ln, &rig_list, NULL, NULL);
+	}
+	
+	list_foreach(&rig_list, &_rig_fan_clean, NULL);
 }
 
 int main() 
@@ -1684,6 +1746,7 @@ int main()
 	rig_forward_pass(K);
 
 	printf("register allocation reverse pass...\n");
+	rig_reverse_pass(K);
 
 	list_foreach(&var_list, &release_var, NULL);
 	list_foreach(&code_list, &release_code, NULL);
