@@ -26,13 +26,6 @@ typedef struct VAR_T {
 	int   live_end;
 } var_t;
 
-typedef struct RIG_NODE_T {
-	struct list_node ln;
-	var_t  *var;
-	int     fan;
-	int     spill;
-} rig_node_t;
-
 struct code_t {
 	struct list_node ln;
 	var_t  *opr0, *opr1, *opr2;
@@ -54,6 +47,13 @@ struct ddg_li_t {
 	struct list_node ln;
 	struct code_t *code;
 };
+
+typedef struct RIG_NODE_T {
+	struct list_node ln;
+	var_t  *var;
+	int     fan;
+	int     spill;
+} rig_node_t;
 
 struct code_t *code_gen(var_t*, var_t*, char, var_t*);
 var_t         *var_map(char *);
@@ -1374,11 +1374,188 @@ LIST_IT_CALLBK(_rig_live_cal)
 	LIST_GO_OVER;
 }
 
+static
+LIST_IT_CALLBK(_rig_list_init)
+{
+	LIST_OBJ(var_t, p, ln);
+	
+	if (!is_number(p->name[0])) {
+		rig_node_t *new = malloc(sizeof(rig_node_t));
+		LIST_NODE_CONS(new->ln);
+		new->var = p;
+		new->fan = 0;
+		new->spill = 0;
+
+		list_insert_one_at_tail(&new->ln, &rig_list, NULL, NULL);
+	}
+
+	LIST_GO_OVER;
+}
+
+void rig_list_init()
+{
+	list_foreach(&var_list, &_rig_live_cal, NULL);
+	list_foreach(&var_list, &_rig_list_init, NULL);
+}
+
+static
+LIST_IT_CALLBK(_rig_list_print)
+{
+	LIST_OBJ(rig_node_t, p, ln);
+	printf("%s: live=%d~%d, fan=%d, ", 
+			p->var->name, p->var->live_start, 
+			p->var->live_end, p->fan);
+	if (p->spill) 
+		printf(" may-spill\n");
+	else
+		printf("no-spill\n");
+
+	LIST_GO_OVER;
+}
+
+void rig_print(struct list_it *li)
+{
+	list_foreach(li, &_rig_list_print, NULL);
+}
+
+struct rig_fan_arg {
+	struct list_node *end_node;
+	rig_node_t       *n1;
+};
+
+static
+LIST_IT_CALLBK(_rig_fan_s2)
+{
+	LIST_OBJ(rig_node_t, p, ln);
+	P_CAST(rfa, struct rig_fan_arg, pa_extra);
+	rig_node_t *n1 = rfa->n1, *n2 = p;
+
+	if (n1 == n2) {
+		goto next;
+	} else if (n1->var->live_start >= n2->var->live_end ||
+	    n1->var->live_end <= n2->var->live_start) {
+		goto next;
+	}
+	
+	printf("`%s' interferes with `%s'.\n", n1->var->name,
+			n2->var->name);
+	n1->fan ++;
+	n2->fan ++;
+next:
+	if (pa_now->now == rfa->end_node)
+		return LIST_RET_BREAK;
+	else
+		return LIST_RET_CONTINUE;
+}
+
+static
+LIST_IT_CALLBK(_rig_fan_s1)
+{
+	LIST_OBJ(rig_node_t, p, ln);
+	struct list_it sub_list = list_get_it(pa_now->now);
+	struct rig_fan_arg rfa = {pa_head->last, p};
+
+	list_foreach(&sub_list, &_rig_fan_s2, &rfa);
+
+	LIST_GO_OVER;
+}
+
+static
+LIST_IT_CALLBK(_rig_fan_clean)
+{
+	LIST_OBJ(rig_node_t, p, ln);
+	p->fan = 0;
+
+	LIST_GO_OVER;
+}
+
+void rig_list_fan_update()
+{
+	list_foreach(&rig_list, &_rig_fan_clean, NULL);
+	list_foreach(&rig_list, &_rig_fan_s1, NULL);
+}
+
+struct rig_rm_arg {
+	int K;
+	int spill;
+	int if_rm;
+};
+
+static
+LIST_IT_CALLBK(_rig_rm)
+{
+	BOOL res;
+	LIST_OBJ(rig_node_t, p, ln);
+	P_CAST(rra, struct rig_rm_arg, pa_extra);
+
+	if (p->fan < rra->K || rra->spill) {
+		res = list_detach_one(pa_now->now, 
+				pa_head, pa_now, pa_fwd);
+		p->spill = rra->spill;
+		p->fan = 0;
+
+		printf("rm `%s'\n", p->var->name);
+		list_insert_one_at_tail(&p->ln, &rig_stack, NULL, NULL);
+		rra->if_rm ++;
+
+		if (rra->spill)
+			return LIST_RET_BREAK;
+		else
+			return res;
+	}
+
+	LIST_GO_OVER;
+}
+
+static int rig_rm(int spill, int K)
+{
+	struct rig_rm_arg rra = {K, 0, 0};
+	rra.if_rm = 0;
+	rra.spill = spill;
+	list_foreach(&rig_list, &_rig_rm, &rra);
+
+	if (rra.if_rm) {
+		printf(BOLDMAGENTA);
+		printf("%d RIG nodes have been removed " 
+				"with spill=%d.\n", rra.if_rm, spill);
+		printf(ANSI_COLOR_RST);
+
+		printf("RIG stack: \n");
+		rig_print(&rig_stack);
+
+		printf("RIG list updating...\n");
+		rig_list_fan_update();
+
+		printf("RIG list after update:\n");
+		rig_print(&rig_list);
+	} else {
+		printf(BOLDCYAN);
+		printf("no RIG node can be removed "
+				"with spill=%d.\n", spill);
+		printf(ANSI_COLOR_RST);
+	}
+
+	return rra.if_rm;
+}
+
+void rig_forward_pass(int K)
+{
+	int if_rm;
+	while (rig_list.now != NULL) {
+		do {
+			if_rm = rig_rm(0, K);
+		} while (if_rm);
+
+		rig_rm(1, K);
+	}
+}
+
 int main() 
 {
 	FILE *cf;
 	int ncode_last, ncode = 0;
 	int seq_cycles, sch_cycles;
+	int K = 4;
 
 	if (CAL_DEBUG) 
 		pseudo_test_rig();
@@ -1494,8 +1671,19 @@ int main()
 	*/
 
 	printf("begin liveness calculation...\n");
-	list_foreach(&var_list, &_rig_live_cal, NULL);
+	rig_list_init();
+
+	printf("update interferes...\n");
+	rig_list_fan_update();
+
+	printf("register interference graph list:\n");
+	rig_print(&rig_list);
 	
+	printf("register allocation forward pass...\n");
+	K = 3;
+	rig_forward_pass(K);
+
+	printf("register allocation reverse pass...\n");
 
 	list_foreach(&var_list, &release_var, NULL);
 	list_foreach(&code_list, &release_code, NULL);
