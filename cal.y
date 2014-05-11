@@ -1521,6 +1521,12 @@ LIST_IT_CALLBK(_rig_fan_s2)
 
 	if (n1 == n2) {
 		goto next;
+	} else if (n1->var->live_end - n1->var->live_start == 0) {
+		/* skip zero-life value */
+		goto next;
+	} else if (n2->var->live_end - n2->var->live_start == 0) {
+		/* skip zero-life value */
+		goto next;
 	} else if (n1->var->live_start >= n2->var->live_end ||
 	    n1->var->live_end <= n2->var->live_start) {
 		goto next;
@@ -1548,7 +1554,6 @@ LIST_IT_CALLBK(_rig_fan_s2)
 			printf(" is ok with ");
 			_print_var(stdout, n2->var);
 			printf(", whose color = %d\n", n2->var->color);
-			printf("\n");
 		}
 
 	n1->fan ++;
