@@ -151,12 +151,30 @@ void pseudo_test_rig()
 	var_t *f = var_map("f");
 	var_t *g = var_map("g");
 	var_t *h = var_map("h");
-	code_gen(a , NULL, '=', _3);
-	code_gen(b , a, '+', _3);
+	var_t *i = var_map("i");
+	var_t *z = var_map("z");
+	code_gen(a , a, '+', z);
+	code_gen(b , z, '+', a);
 	code_gen(c , a, '*', _3);
 	code_gen(d , a, '-', _3);
-	code_gen(e , a, '/', _3);
+	code_gen(e , _3, '/', a);
 	code_gen(f , b, '*', c);
 	code_gen(g , d, '-', e);
 	code_gen(h , f, '*', g);
+	code_gen(i , b, '*', b);
+}
+
+void pseudo_test_spill()
+{
+	var_t *a = var_map("a");
+	a->color = 0;
+	var_t *b = var_map("b");
+	b->color = 1;
+	var_t *c = var_map("c");
+	c->color = 0;
+
+	code_gen(b , a, '+', a);
+	code_gen(a , a, '+', b);
+	code_gen(a , a, '+', c);
+	code_gen(a , b, '+', b);
 }

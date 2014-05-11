@@ -25,6 +25,7 @@ typedef struct VAR_T {
 	int   live_start;
 	int   live_end;
 	int   color;
+	char *mem_ref;
 } var_t;
 
 struct code_t {
@@ -188,8 +189,18 @@ struct pa_id_var {
 void _print_var(FILE *f, var_t *v)
 {
 	fprintf(f, "%s", v->name);
-	if (v->ssa_sub != 0)
+	if (!is_number(v->name[0]) && v->ssa_sub > 0)
 		fprintf(f, "_%d", v->ssa_sub);
+	if (v->mem_ref)
+		fprintf(f, "(%s)", v->mem_ref);
+}
+
+void _print_color_var(FILE *f, var_t *v)
+{
+	if (v->color == 0)
+		fprintf(f, "%s (spill)", v->name);
+	else
+		fprintf(f, "%s_r%d", v->name, v->color);
 }
 
 static
@@ -270,6 +281,8 @@ LIST_IT_CALLBK(release_var)
 			pa_head, pa_now, pa_fwd);
 
 	free(p->name);
+	if (p->mem_ref)
+		free(p->mem_ref);
 	free(p);
 
 	return res;
@@ -288,6 +301,19 @@ LIST_IT_CALLBK(release_code)
 	return res;
 }
 
+void cons_var_t(var_t *p, char *name)
+{
+	LIST_NODE_CONS(p->ln);
+	p->name = strdup(name);
+	p->ssa_sub = 0;
+	p->ssa_use = 0;
+
+	p->live_start = 0;
+	p->live_end = 0;
+	p->color = 0;
+	p->mem_ref = NULL;
+}
+
 var_t *var_map(char *name)
 {
 	struct pa_id_var pa = {name, NULL};
@@ -295,14 +321,7 @@ var_t *var_map(char *name)
 
 	if (pa.var == NULL) {
 		pa.var = malloc(sizeof(var_t));
-		LIST_NODE_CONS(pa.var->ln);
-		pa.var->name = strdup(name);
-		pa.var->ssa_sub = 0;
-		pa.var->ssa_use = 0;
-		
-		pa.var->live_start = 0;
-		pa.var->live_end = 0;
-		pa.var->color = 0;
+		cons_var_t(pa.var, name);
 
 		list_insert_one_at_tail(&pa.var->ln, &var_list, NULL, NULL);
 	}
@@ -310,17 +329,15 @@ var_t *var_map(char *name)
 	return pa.var;
 }
 
-struct code_t *code_gen(var_t* opr0, 
-		var_t* opr1, char op, var_t* opr2)
+void code_cons(struct code_t *code, int line_num, 
+		var_t *opr0, var_t *opr1, char op, var_t *opr2)
 {
-	struct code_t *code = malloc(sizeof(struct code_t));
-	static int line_num = 0;
 	LIST_NODE_CONS(code->ln);
 	code->opr0 = opr0;
 	code->op = op;
 	code->opr1 = opr1;
 	code->opr2 = opr2;
-	code->line_num = line_num ++;
+	code->line_num = line_num;
 	code->dead_flag = 0;
 
 	LIST_CONS(code->ddg_in);
@@ -331,7 +348,15 @@ struct code_t *code_gen(var_t* opr0,
 	LIST_NODE_CONS(code->ln_ready);
 	LIST_NODE_CONS(code->ln_active);
 	code->start_cycle = -1;
+}
 
+struct code_t *code_gen(var_t* opr0, 
+		var_t* opr1, char op, var_t* opr2)
+{
+	struct code_t *code = malloc(sizeof(struct code_t));
+	static int line_num = 0;
+
+	code_cons(code, line_num ++, opr0, opr1, op, opr2);
 	list_insert_one_at_tail(&code->ln, &code_list, NULL, NULL);
 	return code;
 }
@@ -770,10 +795,13 @@ LIST_IT_CALLBK(_2ssa_s1)
 	struct _2ssa_arg _2sa;
 
 	_2sa.new = malloc(sizeof(var_t));
-	LIST_NODE_CONS(_2sa.new->ln);
-	_2sa.new->name = strdup(p->opr0->name);
+	cons_var_t(_2sa.new, p->opr0->name);
+
 	_2sa.new->ssa_sub = p->opr0->ssa_sub + 1;
 	_2sa.new->ssa_use = 1;
+	if (p->opr0->mem_ref)
+		_2sa.new->mem_ref = strdup(p->opr0->mem_ref);
+
 	list_insert_one_at_tail(&_2sa.new->ln, &var_list, NULL, NULL);
 
 	_2sa.dead = p->opr0;
@@ -781,26 +809,46 @@ LIST_IT_CALLBK(_2ssa_s1)
 
 	_2sa.s1 = p;
 	_2sa.end_node = pa_head->last;
-	
-	if (!_2sa.dead->ssa_use) {
-		/* printf("rm ");
-		_print_var(stdout, _2sa.dead);
-		printf("\n");
-		*/
 
-		list_detach_one(&_2sa.dead->ln, &var_list, NULL, NULL);
-		free(_2sa.dead->name);
-		free(_2sa.dead);
-	}
-
+	/* the set of ssa_use of opr1 and opr2 
+	   must precede that of opr0, here is an
+	   example to explain this point:
+	   a_1 = a_1 + z_1;
+	*/
 	if (p->opr1 != NULL) 
 		p->opr1->ssa_use = 1;
 	if (p->opr2 != NULL) 
 		p->opr2->ssa_use = 1;
+	
+	if (!_2sa.dead->ssa_use) {
+		/* printf("free ");
+		_print_var(stdout, _2sa.dead);
+		printf("...\n"); */
+
+		list_detach_one(&_2sa.dead->ln, &var_list, NULL, NULL);
+		free(_2sa.dead->name);
+		if (_2sa.dead->mem_ref)
+			free(_2sa.dead->mem_ref);
+		free(_2sa.dead);
+	}
 
 	list_foreach(&sub_list, &_2ssa_s2, &_2sa);
 
 	LIST_GO_OVER;
+}
+
+static
+LIST_IT_CALLBK(_set_ssa_use)
+{
+	LIST_OBJ(var_t, p, ln);
+	p->ssa_use = 0;
+	LIST_GO_OVER;
+}
+
+void code_2_ssa()
+{
+	list_foreach(&var_list, &_set_ssa_use, NULL);
+	list_foreach(&code_list, &_2ssa_s1, NULL);
 }
 
 static
@@ -896,9 +944,6 @@ static int code_dead_elimination()
 
 	return num;
 }
-
-#include "pseudo_test.c"
-#define CAL_DEBUG 1
 
 struct ddg_cons_arg {
 	struct code_t    *s1;
@@ -1356,7 +1401,7 @@ LIST_IT_CALLBK(_rig_live_def)
 		rlda->sub_list = list_get_it(pa_now->now);
 		return LIST_RET_BREAK;
 	}
-
+	
 	LIST_GO_OVER;
 }
 
@@ -1369,6 +1414,15 @@ LIST_IT_CALLBK(_rig_live_cal)
 
 	if (is_number(p->name[0]))
 		LIST_GO_OVER;
+	else if (p->mem_ref) {
+		p->live_start = 0;
+		p->live_end = 0;
+	
+		_print_var(stdout, p);
+		printf(" liveness: in memory.\n");
+
+		LIST_GO_OVER;
+	}
 
 	list_foreach(&code_list, _rig_live_def, &rlda);
 	get_liveness(p, &rlda.sub_list, &la);
@@ -1397,8 +1451,35 @@ LIST_IT_CALLBK(_rig_list_init)
 	LIST_GO_OVER;
 }
 
+LIST_IT_CALLBK(_release_rig)
+{
+	BOOL res;
+	LIST_OBJ(rig_node_t, p, ln);
+
+	res = list_detach_one(pa_now->now, 
+			pa_head, pa_now, pa_fwd);
+
+	free(p);
+	return res;
+}
+
+void rig_release()
+{
+	list_foreach(&rig_list, &_release_rig, NULL);
+}
+
+static
+LIST_IT_CALLBK(_var_clean_color)
+{
+	LIST_OBJ(var_t, p, ln);
+	p->color = 0;
+	LIST_GO_OVER;
+}
+	
 void rig_list_init()
 {
+	rig_release();
+	list_foreach(&var_list, &_var_clean_color, NULL);
 	list_foreach(&var_list, &_rig_live_cal, NULL);
 	list_foreach(&var_list, &_rig_list_init, NULL);
 }
@@ -1407,9 +1488,10 @@ static
 LIST_IT_CALLBK(_rig_list_print)
 {
 	LIST_OBJ(rig_node_t, p, ln);
-	printf("%s: live=%d~%d, fan=%d, color=%d, ", 
-			p->var->name, p->var->live_start, 
-			p->var->live_end, p->fan, p->var->color);
+	_print_var(stdout, p->var);
+	printf(": live=%d~%d, fan=%d, color=%d, ", 
+			p->var->live_start, p->var->live_end, 
+			p->fan, p->var->color);
 	if (p->spill) 
 		printf("may-spill\n");
 	else
@@ -1444,19 +1526,30 @@ LIST_IT_CALLBK(_rig_fan_s2)
 		goto next;
 	}
 	
-	if (n1->var->color == 0) 
-		printf("`%s' interferes with `%s'.\n", 
-				n1->var->name, n2->var->name);
+	if (n1->var->color == 0) {
+		_print_var(stdout, n1->var);
+		printf(" interferes with ");
+		_print_var(stdout, n2->var);
+		printf("\n");
+	}
 
 	if (n2->var->color != 0) /* not a spill-color */
 		if (n1->var->color == n2->var->color) {
 			rfa->if_color_ok = 0;
-			printf("`%s' conflicts with `%s'.\n", 
-					n1->var->name, n2->var->name);
+
+			_print_var(stdout, n1->var);
+			printf(" conflicts with ");
+			_print_var(stdout, n2->var);
+			printf("\n");
+
 			return LIST_RET_BREAK;
-		} else
-			printf("`%s' is ok with `%s', whose color=%d.\n", 
-					n1->var->name, n2->var->name, n2->var->color);
+		} else {
+			_print_var(stdout, n1->var);
+			printf(" is ok with ");
+			_print_var(stdout, n2->var);
+			printf(", whose color = %d\n", n2->var->color);
+			printf("\n");
+		}
 
 	n1->fan ++;
 	n2->fan ++;
@@ -1513,7 +1606,10 @@ LIST_IT_CALLBK(_rig_rm)
 		p->spill = rra->spill;
 		p->fan = 0;
 
-		printf("rm `%s'\n", p->var->name);
+		printf("rm ");
+		_print_var(stdout, p->var);
+		printf("\n");
+
 		list_insert_one_at_tail(&p->ln, &rig_stack, NULL, NULL);
 		rra->if_rm ++;
 
@@ -1569,15 +1665,18 @@ void rig_forward_pass(int K)
 	}
 }
 
-void rig_reverse_pass(int K) 
+int rig_reverse_pass(int K) 
 {
 	struct rig_fan_arg rfa;
 	rig_node_t *p;
+	int res = 0;
 
 	while (rig_stack.now) {
 		p = MEMBER_2_STRUCT(rig_stack.last, rig_node_t, ln);
 		list_detach_one(rig_stack.last, &rig_stack, NULL, NULL);
-		printf("pop `%s'.\n", p->var->name);
+		printf("pop ");
+		_print_var(stdout, p->var);
+		printf("\n");
 
 		if (rig_list.now != NULL) {
 			do {
@@ -1592,9 +1691,9 @@ void rig_reverse_pass(int K)
 
 			if (p->spill)
 				if(p->var->color > K) {
-					printf("no luck, %s needs to be spilled.\n", 
-							p->var->name);
+					printf("no luck, needs to be spilled.\n");
 					p->var->color = 0; /* spill-color */
+					res ++;
 				} else 
 					printf("we are lucky.\n");
 
@@ -1602,15 +1701,126 @@ void rig_reverse_pass(int K)
 			p->var->color = 1; /* first-one */
 
 		printf(BOLDBLUE);
-		printf("assign `%s' with color %d.\n", p->var->name, 
-				p->var->color);
+		printf("assign ");
+		_print_var(stdout, p->var);
+		printf(" with color %d.\n", p->var->color);
 		printf(ANSI_COLOR_RST);
 
 		list_insert_one_at_tail(&p->ln, &rig_list, NULL, NULL);
 	}
 	
 	list_foreach(&rig_list, &_rig_fan_clean, NULL);
+	return res;
 }
+
+
+static
+LIST_IT_CALLBK(_var_color_print)
+{
+	LIST_OBJ(var_t, p, ln);
+	if (!is_number(p->name[0])) {
+		_print_var(stdout, p);
+		printf(" : ");
+		_print_color_var(stdout, p);
+		printf("\n");
+	}
+
+	LIST_GO_OVER;
+}
+
+void var_color_print()
+{
+	list_foreach(&var_list, &_var_color_print, NULL);
+}
+
+char *mem_name()
+{
+	static int mem_cnt = 0;
+	static char mem_nm[64];
+
+	sprintf(mem_nm, "mem%d", mem_cnt++);
+	return mem_nm;
+}
+
+static
+LIST_IT_CALLBK(_spill)
+{
+	struct code_t *code;
+	var_t *mem;
+	LIST_OBJ(struct code_t, p, ln);
+	struct list_it tmp_it;
+
+	if (p->opr0 != NULL &&
+	    !is_number(p->opr0->name[0]) &&
+	    p->opr0->color == 0) {
+
+		mem = var_map(mem_name());
+		mem->mem_ref = strdup(p->opr0->name);
+
+		code = malloc(sizeof(struct code_t));
+		code_cons(code, 0, mem, NULL, '=', p->opr0);
+
+		if (pa_fwd->now == pa_head->now) {
+			list_insert_one_at_tail(&code->ln, pa_head,
+					pa_now, pa_fwd);
+			return LIST_RET_BREAK;
+		} else {
+			tmp_it = list_get_it(&code->ln);
+			list_tk(&tmp_it, pa_fwd);
+		}
+	}
+
+	if (p->opr1 != NULL &&
+	    !is_number(p->opr1->name[0]) &&
+	    p->opr1->color == 0 ) {
+
+		mem = var_map(mem_name());
+		mem->mem_ref = strdup(p->opr1->name);
+
+		code = malloc(sizeof(struct code_t));
+		code_cons(code, 0, p->opr1, NULL, '=', mem);
+
+		if (pa_now->now == pa_head->now) {
+			list_insert_one_at_head(&code->ln, pa_head,
+					pa_now, pa_fwd);
+		} else {
+			tmp_it = list_get_it(&code->ln);
+			list_tk(&tmp_it, pa_now);
+		}
+	} 
+
+	if (p->opr2 != NULL &&
+	    !is_number(p->opr2->name[0]) &&
+	    p->opr2->color == 0 &&
+		p->opr2 != p->opr1) {
+
+		mem = var_map(mem_name());
+		mem->mem_ref = strdup(p->opr2->name);
+
+		code = malloc(sizeof(struct code_t));
+		code_cons(code, 0, p->opr2, NULL, '=', mem);
+
+		if (pa_now->now == pa_head->now) {
+			list_insert_one_at_head(&code->ln, pa_head,
+					pa_now, pa_fwd);
+		} else {
+			tmp_it = list_get_it(&code->ln);
+			list_tk(&tmp_it, pa_now);
+		}
+	} 
+
+	LIST_GO_OVER;
+}
+
+void code_spill()
+{
+	int num = 0;
+	list_foreach(&code_list, &_spill, NULL);
+	list_foreach(&code_list, &_code_renumber, &num);
+	code_2_ssa();
+}
+
+#include "pseudo_test.c"
 
 int main() 
 {
@@ -1618,17 +1828,13 @@ int main()
 	int ncode_last, ncode = 0;
 	int seq_cycles, sch_cycles;
 	int K = 4;
+	int spills= 0;
 
-	if (CAL_DEBUG) 
-		pseudo_test_rig();
+	if (1) 
+		pseudo_test_ce_simple();
 	else
 		yyparse();
 	
-	/*
-	printf("variables:\n"); 
-	var_print();
-	*/
-
 	printf("three-address code:\n"); 
 	printf(BOLDBLUE);
 	code_print(); 
@@ -1655,18 +1861,18 @@ int main()
 		list_foreach(&code_list, &print_dep, NULL);
 	}
 	
-	/*
 	printf("adding psedu-print code...\n");
 	add_psedu_print_code();
 
 	printf("transforming to SSA...\n");
-	list_foreach(&code_list, &_2ssa_s1, NULL);
+	code_2_ssa();
 	
 	printf("SSA form:\n"); 
 	printf(BOLDRED);
 	code_print(); 
 	printf(ANSI_COLOR_RST);
 
+	/*
 	do {
 		ncode_last = ncode;
 
@@ -1732,22 +1938,42 @@ int main()
 			seq_cycles, sch_cycles, seq_cycles - sch_cycles);
 	*/
 
-	printf("begin liveness calculation...\n");
-	rig_list_init();
+	do {
+		printf("begin liveness calculation...\n");
+		rig_list_init();
 
-	printf("update interferes...\n");
-	rig_list_fan_update();
+		printf("update interferes...\n");
+		rig_list_fan_update();
 
-	printf("register interference graph list:\n");
-	rig_print(&rig_list);
+		printf("register interference graph list:\n");
+		rig_print(&rig_list);
+
+		printf("register allocation forward pass...\n");
+		K = 3;
+		rig_forward_pass(K);
+
+		printf("register allocation reverse pass...\n");
+		spills = rig_reverse_pass(K);
+
+		printf(BOLDRED);
+		printf("variables' color:\n"); 
+		var_color_print();
+		printf(ANSI_COLOR_RST);
+		
+		if (spills == 0) {
+			printf("register allocation finished.\n");
+			break;
+		} else {
+			printf("%d spill(s) left, ",
+					spills);
+
+			printf("spilling and converting to SSA...\n");
+			code_spill();
+			code_print(); 
+		}
+	} while (1);
 	
-	printf("register allocation forward pass...\n");
-	K = 3;
-	rig_forward_pass(K);
-
-	printf("register allocation reverse pass...\n");
-	rig_reverse_pass(K);
-
+	rig_release();
 	list_foreach(&var_list, &release_var, NULL);
 	list_foreach(&code_list, &release_code, NULL);
 
