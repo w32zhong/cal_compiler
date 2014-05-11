@@ -195,6 +195,18 @@ void _print_var(FILE *f, var_t *v)
 		fprintf(f, "(%s)", v->mem_ref);
 }
 
+void _write_var(FILE *f, var_t *v)
+{
+	if (v->mem_ref)
+		fprintf(f, "%s", v->mem_ref);
+	else {
+		fprintf(f, "%s", v->name);
+
+		if (!is_number(v->name[0]))
+			fprintf(f, "_r%d", v->color);
+	}
+}
+
 void _print_color_var(FILE *f, var_t *v)
 {
 	if (v->color == 0)
@@ -261,6 +273,37 @@ void _print_code(FILE *f, struct code_t *p)
 	}
 
 	fprintf(f, ";");
+}
+
+void _write_code(FILE *f, struct code_t *p)
+{
+	if (p->op == '+' || (p->op == '-' && p->opr1 != NULL) ||
+	    p->op == '*' || p->op == '/') {
+		fprintf(f, "S%d:\t", p->line_num);
+		_write_var(f, p->opr0);
+		fprintf(f, " = ");
+		_write_var(f, p->opr1);
+		fprintf(f, " %c ", p->op);
+		_write_var(f, p->opr2);
+	} else if (p->op == '-') {
+		fprintf(f, "S%d:\t", p->line_num);
+		_write_var(f, p->opr0);
+		fprintf(f, " = -");
+		_write_var(f, p->opr2);
+	} else if (p->op == '=') {
+		fprintf(f, "S%d:\t", p->line_num);
+		_write_var(f, p->opr0);
+		fprintf(f, " = ");
+		_write_var(f, p->opr2);
+	} else if (p->op == 'P') {
+		fprintf(f, "\tprintf(\"%s = %%d\\n\", ", 
+				p->opr2->name);
+		_write_var(f, p->opr2);
+		fprintf(f, ")");
+	}
+
+	fprintf(f, ";");
+	fprintf(f, "\n");
 }
 
 static
@@ -378,41 +421,26 @@ LIST_IT_CALLBK(print_c_def)
 	P_CAST(cf, FILE, pa_extra);
 	char *str = p->name;
 
-	if (is_number(str[0]))
-		LIST_GO_OVER;
-	else if (is_number(str[strlen(str) - 1]))
-		fprintf(cf, "\tint %s;\n", p->name);
-	else
-		fprintf(cf, "\tint %s = 0;\n", p->name);
+	if (!is_number(p->name[0]) && !p->mem_ref) {
+		if (is_number(str[strlen(str) - 1])) {
+			fprintf(cf, "\tint ");
+			_write_var(cf, p);
+			fprintf(cf, ";\n");
+		} else {
+			fprintf(cf, "\tint ");
+			_write_var(cf, p);
+			fprintf(cf, " = 0;\n");
+		}
+	}
 
 	LIST_GO_OVER;
 }
 
-static
-LIST_IT_CALLBK(print_c_code)
+LIST_IT_CALLBK(write_c_code)
 {
 	LIST_OBJ(struct code_t, p, ln);
 	P_CAST(cf, FILE, pa_extra);
-	_print_code(cf, p);
-	fprintf(cf, "\n");
-	LIST_GO_OVER;
-}
-
-static
-LIST_IT_CALLBK(print_c_print)
-{
-	LIST_OBJ(var_t, p, ln);
-	P_CAST(cf, FILE, pa_extra);
-	char *str = p->name;
-
-	if (is_number(str[0]))
-		LIST_GO_OVER;
-	else if (is_number(str[strlen(str) - 1]))
-		LIST_GO_OVER;
-	else
-		fprintf(cf, "\tprintf(\"%s = %%d\\n\", %s);\n", 
-				p->name, p->name);
-
+	_write_code(cf, p);
 	LIST_GO_OVER;
 }
 
@@ -1092,6 +1120,9 @@ int op_delay(struct code_t *p)
 			break;
 		case '/':
 			w = 8;
+			break;
+		case 'P':
+			w = 2;
 			break;
 		default:
 			printf("bad in #%d\n", __LINE__);
@@ -1835,8 +1866,8 @@ int main()
 	int K = 4;
 	int spills= 0;
 
-	if (1) 
-		pseudo_test_ce_simple();
+	if (0) 
+		pseudo_test_rig();
 	else
 		yyparse();
 	
@@ -1845,27 +1876,9 @@ int main()
 	code_print(); 
 	printf(ANSI_COLOR_RST);
 
-	if (0) {
-		cf = fopen("output.c", "w");
-		if (cf) {
-			printf("generate C file...\n");
-		} else {
-			printf("cannot open file for writing.\n");
-			return 0;
-		}
+	printf("dependency: \n");
+	list_foreach(&code_list, &print_dep, NULL);
 
-		fprintf(cf, "#include <stdio.h> \n");
-		fprintf(cf, "int main() \n{ \n");
-		list_foreach(&var_list, &print_c_def, cf);
-		list_foreach(&code_list, &print_c_code, cf);
-		list_foreach(&var_list, &print_c_print, cf);
-		fprintf(cf, "\treturn 0; \n} \n");
-		fclose(cf);
-
-		printf("dependency: \n");
-		list_foreach(&code_list, &print_dep, NULL);
-	}
-	
 	printf("adding psedu-print code...\n");
 	add_psedu_print_code();
 
@@ -1877,7 +1890,6 @@ int main()
 	code_print(); 
 	printf(ANSI_COLOR_RST);
 
-	/*
 	do {
 		ncode_last = ncode;
 
@@ -1902,10 +1914,8 @@ int main()
 	printf(BOLDMAGENTA);
 	code_print(); 
 	printf(ANSI_COLOR_RST);
-	*/
 
-	/*
-	printf("doing instruction scheduling...\n");
+	/* printf("doing instruction scheduling...\n");
 	printf("first do sequential simulation...\n");
 	printf("constructing DDG...\n");
 	ddg_cons();
@@ -1954,7 +1964,6 @@ int main()
 		rig_print(&rig_list);
 
 		printf("register allocation forward pass...\n");
-		K = 3;
 		rig_forward_pass(K);
 
 		printf("register allocation reverse pass...\n");
@@ -1964,6 +1973,9 @@ int main()
 		printf("variables' color:\n"); 
 		var_color_print();
 		printf(ANSI_COLOR_RST);
+
+		printf("now, code looks like: \n");
+		code_print(); 
 		
 		if (spills == 0) {
 			printf("register allocation finished.\n");
@@ -1974,9 +1986,31 @@ int main()
 
 			printf("spilling and converting to SSA...\n");
 			code_spill();
-			code_print(); 
 		}
 	} while (1);
+	
+	printf("final code:\n"); 
+	printf(BOLDMAGENTA);
+	list_foreach(&code_list, &write_c_code, stdout);
+	printf(ANSI_COLOR_RST);
+	
+
+	if (1) {
+		cf = fopen("output.c", "w");
+		if (cf) {
+			printf("generate C file...\n");
+		} else {
+			printf("cannot open file for writing.\n");
+			return 0;
+		}
+
+		fprintf(cf, "#include <stdio.h> \n");
+		fprintf(cf, "int main() \n{ \n");
+		list_foreach(&var_list, &print_c_def, cf);
+		list_foreach(&code_list, &write_c_code, cf);
+		fprintf(cf, "\treturn 0; \n} \n");
+		fclose(cf);
+	}
 	
 	rig_release();
 	list_foreach(&var_list, &release_var, NULL);
