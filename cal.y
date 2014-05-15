@@ -292,7 +292,10 @@ void _write_code(FILE *f, struct code_t *p)
 		_write_var(f, p->opr0);
 		fprintf(f, " = ");
 		_write_var(f, p->opr2);
-	} 
+	} else if (p->op == 'P') {
+		fprintf(f, "printf(\"%s = %%d\\n\", %s)", 
+				p->opr2->name, p->opr2->name);
+	}
 
 	fprintf(f, ";");
 	fprintf(f, "\n");
@@ -425,14 +428,6 @@ LIST_IT_CALLBK(print_c_def)
 		}
 	}
 
-	LIST_GO_OVER;
-}
-
-LIST_IT_CALLBK(write_c_code)
-{
-	LIST_OBJ(struct code_t, p, ln);
-	P_CAST(cf, FILE, pa_extra);
-	_write_code(cf, p);
 	LIST_GO_OVER;
 }
 
@@ -905,7 +900,7 @@ LIST_IT_CALLBK(_dead_flag)
 		printf("destination operator, ");
 		get_liveness(p->opr0, &sub_list, &la);
 
-		if (la.life == 0 && is_number(str[strlen(str) - 1]))
+		if (la.life == 0)
 			p->dead_flag = 1;
 	}
 	
@@ -1115,7 +1110,7 @@ int op_delay(struct code_t *p)
 			w = 8;
 			break;
 		case 'P':
-			w = 2;
+			w = 20;
 			break;
 		default:
 			printf("bad in #%d\n", __LINE__);
@@ -1861,6 +1856,7 @@ struct _def_find_arg {
 	int    found;
 };
 
+int    g_code_gen_line = 0;
 struct list_it def_list = LIST_NULL;
 
 void _def_print_(FILE *f, def_t *p)
@@ -2009,6 +2005,7 @@ LIST_IT_CALLBK(_code_def_in)
 	if (p->opr1 && !is_number(p->opr1->name[0])) {
 		if (NULL == p->opr1->mem_ref &&
 				!def_find(p->opr1->name, p->opr1->color)) {
+			fprintf(cf, "S%d:", g_code_gen_line++);
 			fprintf(cf, "\t%s_r%d = %s;\n", p->opr1->name,
 					p->opr1->color, p->opr1->name);
 
@@ -2020,6 +2017,7 @@ LIST_IT_CALLBK(_code_def_in)
 	if (p->opr2 && !is_number(p->opr2->name[0])) {
 		if (NULL == p->opr2->mem_ref &&
 				!def_find(p->opr2->name, p->opr2->color)) {
+			fprintf(cf, "S%d:", g_code_gen_line++);
 			fprintf(cf, "\t%s_r%d = %s;\n", p->opr2->name,
 					p->opr2->color, p->opr2->name);
 
@@ -2076,6 +2074,8 @@ LIST_IT_CALLBK(_code_gen)
 	cga.if_last_value = 1;
 	cga.p = p;
 
+	if (p->op != 'P')
+		fprintf(cf, "S%d:", g_code_gen_line++);
 	fprintf(cf, "\t");
 	_write_code(cf, p);
 
@@ -2085,15 +2085,18 @@ LIST_IT_CALLBK(_code_gen)
 
 	list_foreach(&sub_list, &_if_last_value, &cga);
 
-	if (cga.if_last_value)
+	if (cga.if_last_value) {
+		fprintf(cf, "S%d:", g_code_gen_line++);
 		fprintf(cf, "\t%s = %s_r%d;\n", p->opr0->name,
 				p->opr0->name, p->opr0->color);
+	}
 next:
 	LIST_GO_OVER;
 }
 
 void code_gen(FILE *cf)
 {
+	g_code_gen_line = 0;
 	list_foreach(&code_list, &_code_get_def, NULL);
 	def_print(cf);
 	def_list_release();
@@ -2102,10 +2105,6 @@ void code_gen(FILE *cf)
 	def_list_release();
 
 	list_foreach(&code_list, &_code_gen, cf);
-
-	list_foreach(&code_list, &_code_get_def, NULL);
-	print_print(cf);
-	def_list_release();
 }
 
 #include "pseudo_test.c"
@@ -2128,8 +2127,12 @@ int main()
 	code_print(); 
 	printf(ANSI_COLOR_RST);
 
-	printf("dependency: \n");
+	/*printf("dependency: \n");
 	list_foreach(&code_list, &print_dep, NULL);
+	*/
+
+	printf("adding psedu-print code...\n");
+	add_psedu_print_code();
 
 	printf("transforming to SSA...\n");
 	code_2_ssa();
@@ -2242,7 +2245,7 @@ int main()
 
 	printf("final code:\n"); 
 	printf(BOLDMAGENTA);
-	list_foreach(&code_list, &write_c_code, stdout);
+	code_gen(stdout);
 	printf(ANSI_COLOR_RST);
 	
 
