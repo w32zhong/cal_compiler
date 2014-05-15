@@ -4,8 +4,8 @@ void pseudo_test_cse_1()
 	var_t *b = var_map("b");
 	var_t *c = var_map("c");
 	var_t *d = var_map("d");
-	code_gen(a , b, '+', c);
-	code_gen(d , b, '+', c);
+	_3_addr_code_gen(a , b, '+', c);
+	_3_addr_code_gen(d , b, '+', c);
 }
 
 void pseudo_test_cse_2()
@@ -14,8 +14,8 @@ void pseudo_test_cse_2()
 	var_t *b = var_map("b");
 	var_t *c = var_map("c");
 	var_t *d = var_map("d");
-	code_gen(a , NULL, '=', d);
-	code_gen(b , c, '+', d);
+	_3_addr_code_gen(a , NULL, '=', d);
+	_3_addr_code_gen(b , c, '+', d);
 }
 
 void pseudo_test_cse_3()
@@ -24,8 +24,8 @@ void pseudo_test_cse_3()
 	var_t *b = var_map("b");
 	var_t *c = var_map("c");
 	var_t *d = var_map("d");
-	code_gen(a , NULL, '=', d);
-	code_gen(b , NULL, '=', d);
+	_3_addr_code_gen(a , NULL, '=', d);
+	_3_addr_code_gen(b , NULL, '=', d);
 }
 
 void pseudo_test_cse_4()
@@ -34,8 +34,8 @@ void pseudo_test_cse_4()
 	var_t *b = var_map("b");
 	var_t *c = var_map("c");
 	var_t *d = var_map("d");
-	code_gen(a , NULL, '-', d);
-	code_gen(b , NULL, '-', d);
+	_3_addr_code_gen(a , NULL, '-', d);
+	_3_addr_code_gen(b , NULL, '-', d);
 }
 
 void pseudo_test_cse_5()
@@ -44,8 +44,8 @@ void pseudo_test_cse_5()
 	var_t *b = var_map("b");
 	var_t *c = var_map("c");
 	var_t *d = var_map("d");
-	code_gen(a , NULL, '=', d);
-	code_gen(b , NULL, '-', d);
+	_3_addr_code_gen(a , NULL, '=', d);
+	_3_addr_code_gen(b , NULL, '-', d);
 }
 
 void pseudo_test_ce_1()
@@ -54,8 +54,8 @@ void pseudo_test_ce_1()
 	var_t *b = var_map("b");
 	var_t *c = var_map("c");
 	var_t *d = var_map("d");
-	code_gen(a , b, '+', c);
-	code_gen(d , NULL, '=', a);
+	_3_addr_code_gen(a , b, '+', c);
+	_3_addr_code_gen(d , NULL, '=', a);
 }
 
 void pseudo_test_ce_2()
@@ -64,8 +64,8 @@ void pseudo_test_ce_2()
 	var_t *b = var_map("b");
 	var_t *c = var_map("c");
 	var_t *d = var_map("d");
-	code_gen(a , NULL, '=', d);
-	code_gen(b , c, '+', a);
+	_3_addr_code_gen(a , NULL, '=', d);
+	_3_addr_code_gen(b , c, '+', a);
 }
 
 void pseudo_test_ce_3()
@@ -74,8 +74,8 @@ void pseudo_test_ce_3()
 	var_t *b = var_map("b");
 	var_t *c = var_map("c");
 	var_t *d = var_map("d");
-	code_gen(a , NULL, '=', d);
-	code_gen(b , NULL, '=', a);
+	_3_addr_code_gen(a , NULL, '=', d);
+	_3_addr_code_gen(b , NULL, '=', a);
 }
 
 void pseudo_test_ce_4()
@@ -84,8 +84,8 @@ void pseudo_test_ce_4()
 	var_t *b = var_map("b");
 	var_t *c = var_map("c");
 	var_t *d = var_map("d");
-	code_gen(a , NULL, '=', d);
-	code_gen(b , NULL, '-', a);
+	_3_addr_code_gen(a , NULL, '=', d);
+	_3_addr_code_gen(b , NULL, '-', a);
 }
 
 void pseudo_test_ce_5()
@@ -94,8 +94,8 @@ void pseudo_test_ce_5()
 	var_t *b = var_map("b");
 	var_t *c = var_map("c");
 	var_t *d = var_map("d");
-	code_gen(a , NULL, '-', d);
-	code_gen(b , NULL, '=', a);
+	_3_addr_code_gen(a , NULL, '-', d);
+	_3_addr_code_gen(b , NULL, '=', a);
 }
 
 void pseudo_test_ce_simple()
@@ -105,9 +105,9 @@ void pseudo_test_ce_simple()
 	var_t *b = var_map("b");
 	var_t *c = var_map("c");
 	var_t *d = var_map("d");
-	code_gen(tmp , a, '+', b);
-	code_gen(c , NULL, '=', tmp);
-	code_gen(d , a, '+', b);
+	_3_addr_code_gen(tmp , a, '+', b);
+	_3_addr_code_gen(c , NULL, '=', tmp);
+	_3_addr_code_gen(d , a, '+', b);
 }
 
 void pseudo_test_cse_simple()
@@ -117,10 +117,10 @@ void pseudo_test_cse_simple()
 	var_t *c = var_map("c");
 	var_t *d = var_map("d");
 	var_t *_2 = var_map("2");
-	code_gen(a , b, '+', c);
-	code_gen(d , b, '+', c);
-	code_gen(b , NULL, '=', _2);
-	code_gen(c , NULL, '=', _2);
+	_3_addr_code_gen(a , b, '+', c);
+	_3_addr_code_gen(d , b, '+', c);
+	_3_addr_code_gen(b , NULL, '=', _2);
+	_3_addr_code_gen(c , NULL, '=', _2);
 }
 
 void pseudo_test_ddg()
@@ -133,13 +133,13 @@ void pseudo_test_ddg()
 	var_t *x2 = var_map("x2");
 	var_t *y2 = var_map("y2");
 	var_t *z2 = var_map("z2");
-	code_gen(x , NULL, '=', _2);
-	code_gen(y , NULL, '=', _2);
-	code_gen(z , NULL, '=', x);
-	code_gen(p , x, '+', _2);
-	code_gen(z2 , y, '+', p);
-	code_gen(y2 , NULL, '=', p);
-	code_gen(x2 , NULL, '=', x);
+	_3_addr_code_gen(x , NULL, '=', _2);
+	_3_addr_code_gen(y , NULL, '=', _2);
+	_3_addr_code_gen(z , NULL, '=', x);
+	_3_addr_code_gen(p , x, '+', _2);
+	_3_addr_code_gen(z2 , y, '+', p);
+	_3_addr_code_gen(y2 , NULL, '=', p);
+	_3_addr_code_gen(x2 , NULL, '=', x);
 }
 
 void pseudo_test_rig()
@@ -155,15 +155,15 @@ void pseudo_test_rig()
 	var_t *h = var_map("h");
 	var_t *i = var_map("i");
 	var_t *z = var_map("z");
-	code_gen(a , a, '+', z);
-	code_gen(b , z, '+', a);
-	code_gen(c , a, '*', _3);
-	code_gen(d , a, '-', _3);
-	code_gen(e , _3, '/', a);
-	code_gen(f , b, '*', c);
-	code_gen(g , d, '-', e);
-	code_gen(h , f, '*', g);
-	code_gen(i , b, '*', b);
+	_3_addr_code_gen(a , a, '+', z);
+	_3_addr_code_gen(b , z, '+', a);
+	_3_addr_code_gen(c , a, '*', _3);
+	_3_addr_code_gen(d , a, '-', _3);
+	_3_addr_code_gen(e , _3, '/', a);
+	_3_addr_code_gen(f , b, '*', c);
+	_3_addr_code_gen(g , d, '-', e);
+	_3_addr_code_gen(h , f, '*', g);
+	_3_addr_code_gen(i , b, '*', b);
 }
 
 void pseudo_test_spill()
@@ -175,8 +175,8 @@ void pseudo_test_spill()
 	var_t *c = var_map("c");
 	c->color = 0;
 
-	code_gen(b , a, '+', a);
-	code_gen(a , a, '+', b);
-	code_gen(a , a, '+', c);
-	code_gen(a , b, '+', b);
+	_3_addr_code_gen(b , a, '+', a);
+	_3_addr_code_gen(a , a, '+', b);
+	_3_addr_code_gen(a , a, '+', c);
+	_3_addr_code_gen(a , b, '+', b);
 }

@@ -57,7 +57,7 @@ typedef struct RIG_NODE_T {
 	int     spill;
 } rig_node_t;
 
-struct code_t *code_gen(var_t*, var_t*, char, var_t*);
+struct code_t *_3_addr_code_gen(var_t*, var_t*, char, var_t*);
 var_t         *var_map(char *);
 void           yyerror(const char *);
 void           code_print();
@@ -90,13 +90,13 @@ expr   : expr '+' factor
        { 
          var_t *v = var_map(tmp_name());
          $$ = v;
-         code_gen(v , $1, '+', $3);
+         _3_addr_code_gen(v , $1, '+', $3);
        }
        | expr '-' factor 
        { 
          var_t *v = var_map(tmp_name());
          $$ = v;
-         code_gen(v , $1, '-', $3);
+         _3_addr_code_gen(v , $1, '-', $3);
        }
        | assign 
        { 
@@ -111,13 +111,13 @@ factor : factor '*' term
        { 
          var_t *v = var_map(tmp_name());
          $$ = v;
-         code_gen(v , $1, '*', $3);
+         _3_addr_code_gen(v , $1, '*', $3);
        }
        | factor '/' term 
        { 
          var_t *v = var_map(tmp_name());
          $$ = v;
-         code_gen(v , $1, '/', $3);
+         _3_addr_code_gen(v , $1, '/', $3);
        }
        | term
        { 
@@ -134,7 +134,7 @@ term   : NUM
        { 
          var_t *v = var_map(tmp_name());
          $$ = v;
-         code_gen(v , NULL, '-', $2);
+         _3_addr_code_gen(v , NULL, '-', $2);
        }
        | VAR
        { 
@@ -151,7 +151,7 @@ assign : VAR '=' expr
        {  
          var_t *v = var_map($1);
          $$ = v;
-         code_gen(v , NULL, '=', $3);
+         _3_addr_code_gen(v , NULL, '=', $3);
        };
 %%
 
@@ -279,28 +279,20 @@ void _write_code(FILE *f, struct code_t *p)
 {
 	if (p->op == '+' || (p->op == '-' && p->opr1 != NULL) ||
 	    p->op == '*' || p->op == '/') {
-		fprintf(f, "S%d:\t", p->line_num);
 		_write_var(f, p->opr0);
 		fprintf(f, " = ");
 		_write_var(f, p->opr1);
 		fprintf(f, " %c ", p->op);
 		_write_var(f, p->opr2);
 	} else if (p->op == '-') {
-		fprintf(f, "S%d:\t", p->line_num);
 		_write_var(f, p->opr0);
 		fprintf(f, " = -");
 		_write_var(f, p->opr2);
 	} else if (p->op == '=') {
-		fprintf(f, "S%d:\t", p->line_num);
 		_write_var(f, p->opr0);
 		fprintf(f, " = ");
 		_write_var(f, p->opr2);
-	} else if (p->op == 'P') {
-		fprintf(f, "\tprintf(\"%s = %%d\\n\", ", 
-				p->opr2->name);
-		_write_var(f, p->opr2);
-		fprintf(f, ")");
-	}
+	} 
 
 	fprintf(f, ";");
 	fprintf(f, "\n");
@@ -393,7 +385,7 @@ void code_cons(struct code_t *code, int line_num,
 	code->start_cycle = -1;
 }
 
-struct code_t *code_gen(var_t* opr0, 
+struct code_t *_3_addr_code_gen(var_t* opr0, 
 		var_t* opr1, char op, var_t* opr2)
 {
 	struct code_t *code = malloc(sizeof(struct code_t));
@@ -889,7 +881,7 @@ LIST_IT_CALLBK(_add_psedu_print_code)
 	if (p != NULL && !is_number(str[0]) &&
 			!is_number(str[strlen(str) - 1])) {
 		v = var_map(tmp_name());
-		code_gen(v , NULL, 'P', p);
+		_3_addr_code_gen(v , NULL, 'P', p);
 	}
 
 	LIST_GO_OVER;
@@ -905,6 +897,7 @@ LIST_IT_CALLBK(_dead_flag)
 {
 	BOOL res;
 	LIST_OBJ(struct code_t, p, ln);
+	char *str = p->opr0->name;
 	struct list_it sub_list = list_get_it(pa_now->now);
 	struct live_arg la = {0, 0, 0, NULL, pa_head->last};
 
@@ -912,7 +905,7 @@ LIST_IT_CALLBK(_dead_flag)
 		printf("destination operator, ");
 		get_liveness(p->opr0, &sub_list, &la);
 
-		if (la.life == 0)
+		if (la.life == 0 && is_number(str[strlen(str) - 1]))
 			p->dead_flag = 1;
 	}
 	
@@ -1856,6 +1849,265 @@ void code_spill()
 	code_2_ssa();
 }
 
+typedef struct {
+	char *name;
+	int   color;
+	struct list_node ln;
+} def_t;
+
+struct _def_find_arg {
+	char  *name;
+	int    color;
+	int    found;
+};
+
+struct list_it def_list = LIST_NULL;
+
+void _def_print_(FILE *f, def_t *p)
+{
+	if (p->color == -1)
+		fprintf(f, "%s", p->name);
+	else
+		fprintf(f, "%s_r%d", p->name, p->color);
+}
+
+static
+LIST_IT_CALLBK(_def_print)
+{
+	LIST_OBJ(def_t, p, ln);
+	P_CAST(f, FILE, pa_extra);
+
+	fprintf(f, "\tint ");
+	_def_print_(f, p);
+
+	if (p->color == -1)
+		fprintf(f, " = 0;\n");
+	else
+		fprintf(f, ";\n");
+
+	LIST_GO_OVER;
+}
+
+static
+LIST_IT_CALLBK(_print_print)
+{
+	LIST_OBJ(def_t, p, ln);
+	P_CAST(f, FILE, pa_extra);
+
+	if (p->color == -1)
+		fprintf(f, "\tprintf(\"%s = %%d\\n\", %s);\n", 
+				p->name, p->name);
+
+	LIST_GO_OVER;
+}
+
+void def_print(FILE *f)
+{
+	list_foreach(&def_list, &_def_print, f);
+}
+
+void print_print(FILE *f)
+{
+	list_foreach(&def_list, &_print_print, f);
+}
+
+LIST_IT_CALLBK(_release_def_list)
+{
+	BOOL res;
+	LIST_OBJ(def_t, p, ln);
+
+	res = list_detach_one(pa_now->now, 
+			pa_head, pa_now, pa_fwd);
+
+	free(p);
+	return res;
+}
+
+void def_list_release()
+{
+	list_foreach(&def_list, &_release_def_list, NULL);
+}
+
+void def_map(char *name, int color)
+{
+	def_t *def;
+	if (def_find(name, color))
+		return;
+
+	def = malloc(sizeof(def_t));
+	def->name = name;
+	def->color = color;
+	LIST_NODE_CONS(def->ln);
+
+	list_insert_one_at_tail(&def->ln, &def_list, NULL, NULL);
+}
+
+static
+LIST_IT_CALLBK(_def_find)
+{
+	LIST_OBJ(def_t, p, ln);
+	P_CAST(dfa, struct _def_find_arg, pa_extra);
+
+	if (strcmp(dfa->name, p->name) == 0 &&
+		dfa->color == p->color)
+		dfa->found = 1;
+
+	LIST_GO_OVER;
+}
+
+int def_find(char *name, int color)
+{
+	struct _def_find_arg dfa = {name, color, 0};
+	list_foreach(&def_list, &_def_find, &dfa);
+
+	return dfa.found;
+}
+
+static
+LIST_IT_CALLBK(_code_get_def)
+{
+	LIST_OBJ(struct code_t, p, ln);
+	char *str;
+	
+	if (p->opr1 && !is_number(p->opr1->name[0])) {
+		if (NULL == p->opr1->mem_ref) {
+			str = p->opr1->name;
+			def_map(p->opr1->name, p->opr1->color);
+			if (!is_number(str[strlen(str) - 1]))
+				def_map(p->opr1->name, -1);
+		} else
+			def_map(p->opr1->mem_ref, -1);
+	}
+
+	if (p->opr2 && !is_number(p->opr2->name[0])) {
+		if (NULL == p->opr2->mem_ref) {
+			str = p->opr2->name;
+			def_map(p->opr2->name, p->opr2->color);
+			if (!is_number(str[strlen(str) - 1]))
+				def_map(p->opr2->name, -1);
+		} else
+			def_map(p->opr2->mem_ref, -1);
+	}
+
+	if (NULL == p->opr0->mem_ref) {
+		str = p->opr0->name;
+		def_map(p->opr0->name, p->opr0->color);
+		if (!is_number(str[strlen(str) - 1]))
+			def_map(p->opr0->name, -1);
+	} else
+		def_map(p->opr0->mem_ref, -1);
+	
+	LIST_GO_OVER;
+}
+
+static
+LIST_IT_CALLBK(_code_def_in)
+{
+	LIST_OBJ(struct code_t, p, ln);
+	P_CAST(cf, FILE, pa_extra);
+	
+	if (p->opr1 && !is_number(p->opr1->name[0])) {
+		if (NULL == p->opr1->mem_ref &&
+				!def_find(p->opr1->name, p->opr1->color)) {
+			fprintf(cf, "\t%s_r%d = %s;\n", p->opr1->name,
+					p->opr1->color, p->opr1->name);
+
+			def_map(p->opr1->name, p->opr1->color);
+			def_map(p->opr1->name, -1);
+		}
+	}
+
+	if (p->opr2 && !is_number(p->opr2->name[0])) {
+		if (NULL == p->opr2->mem_ref &&
+				!def_find(p->opr2->name, p->opr2->color)) {
+			fprintf(cf, "\t%s_r%d = %s;\n", p->opr2->name,
+					p->opr2->color, p->opr2->name);
+
+			def_map(p->opr2->name, p->opr2->color);
+			def_map(p->opr2->name, -1);
+		}
+	}
+
+	if (NULL == p->opr0->mem_ref)
+		def_map(p->opr0->name, p->opr0->color);
+
+	LIST_GO_OVER;
+}
+
+struct code_gen_arg {
+	struct list_node *end_node;
+	int if_last_value;
+	struct code_t *p;
+};
+
+LIST_IT_CALLBK(_if_last_value)
+{
+	LIST_OBJ(struct code_t, q, ln);
+	P_CAST(cga, struct code_gen_arg, pa_extra);
+	struct code_t *p = cga->p;
+
+	if (pa_now->now != pa_head->now) {
+		if (p->opr0->mem_ref || q->opr0->mem_ref)
+			goto next;
+		
+		if (strcmp(p->opr0->name, q->opr0->name) == 0) {
+			cga->if_last_value = 0;
+			return LIST_RET_BREAK;
+		}
+	}
+
+next:
+	if (pa_now->now == cga->end_node)
+		return LIST_RET_BREAK;
+	else
+		return LIST_RET_CONTINUE;
+}
+
+static
+LIST_IT_CALLBK(_code_gen)
+{
+	char *str;
+	struct code_gen_arg cga;
+	LIST_OBJ(struct code_t, p, ln);
+	P_CAST(cf, FILE, pa_extra);
+	struct list_it sub_list = list_get_it(pa_now->now);
+
+	cga.end_node = pa_head->last;
+	cga.if_last_value = 1;
+	cga.p = p;
+
+	fprintf(cf, "\t");
+	_write_code(cf, p);
+
+	str = p->opr0->name;
+	if (is_number(str[strlen(str) - 1]))
+		goto next;
+
+	list_foreach(&sub_list, &_if_last_value, &cga);
+
+	if (cga.if_last_value)
+		fprintf(cf, "\t%s = %s_r%d;\n", p->opr0->name,
+				p->opr0->name, p->opr0->color);
+next:
+	LIST_GO_OVER;
+}
+
+void code_gen(FILE *cf)
+{
+	list_foreach(&code_list, &_code_get_def, NULL);
+	def_print(cf);
+	def_list_release();
+	
+	list_foreach(&code_list, &_code_def_in, cf);
+	def_list_release();
+
+	list_foreach(&code_list, &_code_gen, cf);
+
+	list_foreach(&code_list, &_code_get_def, NULL);
+	print_print(cf);
+	def_list_release();
+}
+
 #include "pseudo_test.c"
 
 int main() 
@@ -1897,11 +2149,17 @@ int main()
 		printf(BOLDGREEN);
 		code_print(); 
 		printf(ANSI_COLOR_RST);
+
+		printf("doing dead code elimination...\n"); 
+		ncode = code_dead_elimination();
 	} while (ncode != ncode_last);
 
+	printf("final code after optimization:\n"); 
 	printf(BOLDMAGENTA);
-	printf("doing instruction scheduling...\n");
+	code_print(); 
 	printf(ANSI_COLOR_RST);
+
+	printf("doing instruction scheduling...\n");
 
 	printf("first do sequential simulation...\n");
 	printf("constructing DDG...\n");
@@ -1979,6 +2237,9 @@ int main()
 		}
 	} while (1);
 	
+	printf("variables: ");
+	var_print();
+
 	printf("final code:\n"); 
 	printf(BOLDMAGENTA);
 	list_foreach(&code_list, &write_c_code, stdout);
@@ -1996,12 +2257,11 @@ int main()
 
 		fprintf(cf, "#include <stdio.h> \n");
 		fprintf(cf, "int main() \n{ \n");
-		list_foreach(&var_list, &print_c_def, cf);
-		list_foreach(&code_list, &write_c_code, cf);
+		code_gen(cf);
 		fprintf(cf, "\treturn 0; \n} \n");
 		fclose(cf);
 	}
-	
+
 	rig_release();
 	list_foreach(&var_list, &release_var, NULL);
 	list_foreach(&code_list, &release_code, NULL);
