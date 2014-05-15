@@ -1,2 +1,7 @@
+b=1
+c=2
+d=3
+g=4
+e=5
 a = b*c + g
-d = b*c + e
+d = d*c + e
