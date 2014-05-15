@@ -100,12 +100,14 @@ void pseudo_test_ce_5()
 
 void pseudo_test_ce_simple()
 {
-	var_t *tmp = var_map("tmp0");
+	var_t *tmp = var_map("tmp");
 	var_t *a = var_map("a");
 	var_t *b = var_map("b");
 	var_t *c = var_map("c");
+	var_t *d = var_map("d");
 	code_gen(tmp , a, '+', b);
 	code_gen(c , NULL, '=', tmp);
+	code_gen(d , a, '+', b);
 }
 
 void pseudo_test_cse_simple()

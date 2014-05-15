@@ -1867,7 +1867,7 @@ int main()
 	int spills= 0;
 
 	if (0) 
-		pseudo_test_rig();
+		pseudo_test_ce_simple();
 	else
 		yyparse();
 	
@@ -1878,9 +1878,6 @@ int main()
 
 	printf("dependency: \n");
 	list_foreach(&code_list, &print_dep, NULL);
-
-	printf("adding psedu-print code...\n");
-	add_psedu_print_code();
 
 	printf("transforming to SSA...\n");
 	code_2_ssa();
@@ -1900,22 +1897,12 @@ int main()
 		printf(BOLDGREEN);
 		code_print(); 
 		printf(ANSI_COLOR_RST);
-
-		printf("doing dead code elimination...\n"); 
-		ncode = code_dead_elimination();
-
-		printf("after dead code elimination...\n"); 
-		printf(BOLDGREEN);
-		code_print(); 
-		printf(ANSI_COLOR_RST);
 	} while (ncode != ncode_last);
 
-	printf("final code after optimization:\n"); 
 	printf(BOLDMAGENTA);
-	code_print(); 
+	printf("doing instruction scheduling...\n");
 	printf(ANSI_COLOR_RST);
 
-	/* printf("doing instruction scheduling...\n");
 	printf("first do sequential simulation...\n");
 	printf("constructing DDG...\n");
 	ddg_cons();
@@ -1951,7 +1938,10 @@ int main()
 	printf("instruction scheduling saves %d - %d = %d"
 	       " cycle(s) in total.\n",
 			seq_cycles, sch_cycles, seq_cycles - sch_cycles);
-	*/
+
+	printf(BOLDGREEN);
+	printf("register allocation begins.\n");
+	printf(ANSI_COLOR_RST);
 
 	do {
 		printf("begin liveness calculation...\n");
